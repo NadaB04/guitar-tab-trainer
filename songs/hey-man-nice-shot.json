@@ -1,0 +1,22 @@
+{
+  "title": "Hey Man Nice Shot",
+  "artist": "Filter",
+  "bpm": 91,
+  "difficulty": "Beginner",
+  "tuning": ["D", "A", "D", "G", "B", "E"],
+  "tuningOffsets": [0, 0, 0, 0, 0, -2],
+  "notes": [
+    { "time": 0.0, "string": 6, "fret": 0, "duration": 0.3 },
+    { "time": 0.3, "string": 6, "fret": 0, "duration": 0.3 },
+    { "time": 0.6, "string": 6, "fret": 0, "duration": 0.3 },
+    { "time": 0.9, "string": 6, "fret": 0, "duration": 0.3 },
+    { "time": 1.2, "string": 5, "fret": 8, "duration": 0.25 },
+    { "time": 1.45, "string": 5, "fret": 8, "duration": 0.25 },
+    { "time": 1.7, "string": 5, "fret": 8, "duration": 0.25 },
+    { "time": 1.95, "string": 5, "fret": 8, "duration": 0.25 },
+    { "time": 2.2, "string": 5, "fret": 3, "duration": 0.25 },
+    { "time": 2.45, "string": 5, "fret": 3, "duration": 0.25 },
+    { "time": 2.7, "string": 5, "fret": 3, "duration": 0.25 },
+    { "time": 2.95, "string": 5, "fret": 3, "duration": 0.4 }
+  ]
+}

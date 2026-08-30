@@ -30,5 +30,7 @@
   { "id": "black-hole-sun", "file": "black-hole-sun.json" },
   { "id": "interstate-love-song", "file": "interstate-love-song.json" },
   { "id": "say-it-aint-so", "file": "say-it-aint-so.json" },
-  { "id": "machinehead", "file": "machinehead.json" }
+  { "id": "machinehead", "file": "machinehead.json" },
+  { "id": "hey-man-nice-shot", "file": "hey-man-nice-shot.json" },
+  { "id": "roots-bloody-roots", "file": "roots-bloody-roots.json" }
 ]

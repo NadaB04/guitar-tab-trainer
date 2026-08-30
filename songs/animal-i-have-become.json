@@ -1,0 +1,30 @@
+{
+  "title": "Animal I Have Become",
+  "artist": "Three Days Grace",
+  "bpm": 138,
+  "difficulty": "Intermediate",
+  "tuning": ["C", "G", "C", "F", "A", "D"],
+  "tuningOffsets": [-2, -2, -2, -2, -2, -4],
+  "notes": [
+    { "time": 0.0, "string": 6, "fret": 0, "duration": 0.3 },
+    { "time": 0.3, "string": 6, "fret": 0, "duration": 0.3 },
+    { "time": 0.6, "string": 6, "fret": 7, "duration": 0.25 },
+    { "time": 0.85, "string": 6, "fret": 8, "duration": 0.25 },
+    { "time": 1.1, "string": 6, "fret": 8, "duration": 0.25 },
+    { "time": 1.35, "string": 6, "fret": 7, "duration": 0.5 },
+
+    { "time": 1.9, "string": 6, "fret": 0, "duration": 0.3 },
+    { "time": 2.2, "string": 6, "fret": 0, "duration": 0.3 },
+    { "time": 2.5, "string": 6, "fret": 7, "duration": 0.25 },
+    { "time": 2.75, "string": 6, "fret": 8, "duration": 0.25 },
+    { "time": 3.0, "string": 6, "fret": 8, "duration": 0.25 },
+    { "time": 3.25, "string": 6, "fret": 7, "duration": 0.5 },
+
+    { "time": 3.8, "string": 6, "fret": 0, "duration": 0.3 },
+    { "time": 4.1, "string": 6, "fret": 0, "duration": 0.3 },
+    { "time": 4.4, "string": 6, "fret": 7, "duration": 0.25 },
+    { "time": 4.65, "string": 6, "fret": 8, "duration": 0.25 },
+    { "time": 4.9, "string": 6, "fret": 8, "duration": 0.25 },
+    { "time": 5.15, "string": 6, "fret": 7, "duration": 0.6 }
+  ]
+}

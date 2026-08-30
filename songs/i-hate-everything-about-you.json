@@ -1,0 +1,22 @@
+{
+  "title": "I Hate Everything About You",
+  "artist": "Three Days Grace",
+  "bpm": 94,
+  "difficulty": "Beginner",
+  "tuning": ["D", "A", "D", "G", "B", "E"],
+  "tuningOffsets": [0, 0, 0, 0, 0, -2],
+  "notes": [
+    { "time": 0.0, "string": 6, "fret": 4, "duration": 0.5 },
+    { "time": 0.5, "string": 6, "fret": 0, "duration": 0.5 },
+    { "time": 1.0, "string": 6, "fret": 4, "duration": 0.5 },
+    { "time": 1.5, "string": 6, "fret": 0, "duration": 0.5 },
+    { "time": 2.0, "string": 6, "fret": 4, "duration": 0.5 },
+    { "time": 2.5, "string": 6, "fret": 0, "duration": 0.5 },
+    { "time": 3.0, "string": 6, "fret": 4, "duration": 0.5 },
+    { "time": 3.5, "string": 6, "fret": 0, "duration": 0.7 },
+    { "time": 4.2, "string": 6, "fret": 0, "duration": 0.5 },
+    { "time": 4.7, "string": 6, "fret": 0, "duration": 0.5 },
+    { "time": 5.2, "string": 6, "fret": 0, "duration": 0.5 },
+    { "time": 5.7, "string": 6, "fret": 0, "duration": 0.8 }
+  ]
+}

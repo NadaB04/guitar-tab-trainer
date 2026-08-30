@@ -40,8 +40,14 @@ let SONGS = [];
  * Music helpers
  * ---------------------------------------------------------------------- */
 
-function noteFrequency(string, fret) {
-  return STRING_OPEN_FREQ[string] * Math.pow(2, fret / 12);
+// `tuningOffsets` is an optional per-song array of 6 semitone offsets from standard
+// EADGBE, indexed [string1..string6] (string1 = high e). Lets songs in Drop D, Drop C#,
+// etc. use their real fret numbers while still resolving to the correct absolute pitch —
+// without this, every song's frequency math silently assumed standard tuning regardless
+// of what its `tuning` display field said (see CLAUDE.md).
+function noteFrequency(string, fret, tuningOffsets) {
+  const offset = (tuningOffsets && tuningOffsets[string - 1]) || 0;
+  return STRING_OPEN_FREQ[string] * Math.pow(2, (fret + offset) / 12);
 }
 
 function centsBetween(freqA, freqB) {
@@ -328,6 +334,65 @@ const SFX = {
 };
 
 /* ---------------------------------------------------------------------- *
+ * Metronome — quiet background click, independent of note progression.
+ * Runs on its own AudioContext/timer; BPM is picked up live (no restart
+ * needed) since the interval is recomputed on every scheduled tick.
+ * ---------------------------------------------------------------------- */
+
+const Metronome = {
+  ctx: null,
+  running: false,
+  bpm: 120,
+  beatCount: 0,
+  timerId: null,
+
+  ensureCtx() {
+    if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (this.ctx.state === "suspended") this.ctx.resume();
+    return this.ctx;
+  },
+
+  start(bpm) {
+    this.stop();
+    this.bpm = bpm;
+    this.running = true;
+    this.beatCount = 0;
+    this._tick();
+  },
+
+  stop() {
+    this.running = false;
+    if (this.timerId) clearTimeout(this.timerId);
+    this.timerId = null;
+  },
+
+  setBpm(bpm) {
+    this.bpm = bpm;
+  },
+
+  _tick() {
+    if (!this.running) return;
+    this._click(this.beatCount % 4 === 0);
+    this.beatCount++;
+    this.timerId = setTimeout(() => this._tick(), 60000 / this.bpm);
+  },
+
+  _click(accent) {
+    const ctx = this.ensureCtx();
+    const t0 = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    osc.type = "square";
+    osc.frequency.setValueAtTime(accent ? 1600 : 1000, t0);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(accent ? 0.07 : 0.045, t0); // deliberately quiet/background
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.03);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start(t0);
+    osc.stop(t0 + 0.035);
+  },
+};
+
+/* ---------------------------------------------------------------------- *
  * Screens
  * ---------------------------------------------------------------------- */
 
@@ -449,6 +514,7 @@ const PlayMode = {
     this.buildStringLabels();
     this.buildTrackStrip();
     this.updateProgress();
+    this.setupMetronome(song.bpm);
 
     document.getElementById("calibration-panel").classList.add("hidden");
 
@@ -500,6 +566,23 @@ const PlayMode = {
     // calibration screen. PitchEngine keeps its rAF loop going harmlessly idle.
     this.listening = false;
     PitchEngine.onFrame = null;
+    Metronome.stop();
+    const btn = document.getElementById("metronome-toggle");
+    btn.textContent = "🥁 Metronome: Off";
+    btn.classList.remove("active");
+  },
+
+  setupMetronome(songBpm) {
+    Metronome.stop();
+    const select = document.getElementById("metronome-bpm");
+    const options = METRONOME_BPM_PRESETS.includes(songBpm)
+      ? METRONOME_BPM_PRESETS
+      : [...METRONOME_BPM_PRESETS, songBpm].sort((a, b) => a - b);
+    select.innerHTML = options.map((bpm) =>
+      `<option value="${bpm}"${bpm === songBpm ? " selected" : ""}>${bpm} BPM</option>`).join("");
+    const btn = document.getElementById("metronome-toggle");
+    btn.textContent = "🥁 Metronome: Off";
+    btn.classList.remove("active");
   },
 
   buildStringLabels() {
@@ -553,7 +636,7 @@ const PlayMode = {
   renderTarget() {
     const note = this.notes[this.currentIndex];
     if (!note) return;
-    const freq = noteFrequency(note.string, note.fret);
+    const freq = noteFrequency(note.string, note.fret, this.song.tuningOffsets);
     document.getElementById("target-note").textContent =
       `${stringLabel(this.song, note.string).toUpperCase()} string — fret ${note.fret}`;
     document.getElementById("target-hint").textContent =
@@ -579,7 +662,7 @@ const PlayMode = {
     }
 
     const note = this.notes[this.currentIndex];
-    const targetFreq = noteFrequency(note.string, note.fret);
+    const targetFreq = noteFrequency(note.string, note.fret, this.song.tuningOffsets);
     const cents = centsBetween(freq, targetFreq);
     this.setTuner(freq, cents);
 
@@ -627,7 +710,7 @@ const PlayMode = {
     for (const idx of [this.currentIndex - 1, this.currentIndex - 2]) {
       if (idx < 0) continue;
       const prev = this.notes[idx];
-      const prevFreq = noteFrequency(prev.string, prev.fret);
+      const prevFreq = noteFrequency(prev.string, prev.fret, this.song.tuningOffsets);
       if (Math.abs(centsBetween(freq, prevFreq)) <= MATCH_CENTS_TOLERANCE) return true;
     }
     return false;
@@ -674,7 +757,7 @@ const PlayMode = {
     const chip = this.chipEls[this.currentIndex];
     chip.classList.add("match-flash");
     const justPlayed = this.notes[this.currentIndex];
-    SFX.pluck(noteFrequency(justPlayed.string, justPlayed.fret));
+    SFX.pluck(noteFrequency(justPlayed.string, justPlayed.fret, this.song.tuningOffsets));
     this.results[this.currentIndex] = this.hadMissOnCurrent ? "wrong-first" : "correct";
     if (!this.hadMissOnCurrent) {
       this.combo++;
@@ -716,7 +799,10 @@ const PlayMode = {
     const note = this.notes[this.currentIndex];
     this.reattackNeeded =
       !!prev && !!note &&
-      Math.abs(centsBetween(noteFrequency(note.string, note.fret), noteFrequency(prev.string, prev.fret))) <= MATCH_CENTS_TOLERANCE;
+      Math.abs(centsBetween(
+        noteFrequency(note.string, note.fret, this.song.tuningOffsets),
+        noteFrequency(prev.string, prev.fret, this.song.tuningOffsets)
+      )) <= MATCH_CENTS_TOLERANCE;
     this.reattackSeen = !this.reattackNeeded;
   },
 
@@ -762,6 +848,25 @@ document.getElementById("gain-slider").addEventListener("input", (e) => {
   const value = Number(e.target.value);
   PitchEngine.setGain(value);
   document.getElementById("gain-value").textContent = `${value}×`;
+});
+
+const METRONOME_BPM_PRESETS = [60, 70, 80, 90, 100, 110, 120, 130, 140, 150, 160, 170, 180, 190, 200];
+
+document.getElementById("metronome-toggle").addEventListener("click", () => {
+  const btn = document.getElementById("metronome-toggle");
+  if (Metronome.running) {
+    Metronome.stop();
+    btn.textContent = "🥁 Metronome: Off";
+    btn.classList.remove("active");
+  } else {
+    const bpm = Number(document.getElementById("metronome-bpm").value);
+    Metronome.start(bpm);
+    btn.textContent = "🥁 Metronome: On";
+    btn.classList.add("active");
+  }
+});
+document.getElementById("metronome-bpm").addEventListener("change", (e) => {
+  Metronome.setBpm(Number(e.target.value));
 });
 document.getElementById("play-back-btn").addEventListener("click", () => { Screens.show("menu"); renderSongList(); });
 document.getElementById("play-menu-btn").addEventListener("click", () => { Screens.show("menu"); renderSongList(); });

@@ -1,0 +1,29 @@
+{
+  "title": "Wait and Bleed",
+  "artist": "Slipknot",
+  "bpm": 184,
+  "difficulty": "Advanced",
+  "tuning": ["B", "F#", "B", "E", "G#", "C#"],
+  "tuningOffsets": [-3, -3, -3, -3, -3, -5],
+  "notes": [
+    { "time": 0.0, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 0.16, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 0.32, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 0.48, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 0.64, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 0.8, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 0.96, "string": 6, "fret": 1, "duration": 0.16 },
+    { "time": 1.12, "string": 6, "fret": 4, "duration": 0.16 },
+    { "time": 1.28, "string": 6, "fret": 1, "duration": 0.4 },
+
+    { "time": 1.7, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 1.86, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 2.02, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 2.18, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 2.34, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 2.5, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 2.66, "string": 6, "fret": 1, "duration": 0.16 },
+    { "time": 2.82, "string": 6, "fret": 4, "duration": 0.16 },
+    { "time": 2.98, "string": 6, "fret": 1, "duration": 0.45 }
+  ]
+}

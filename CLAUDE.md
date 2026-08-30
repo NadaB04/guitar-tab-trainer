@@ -27,16 +27,30 @@ theme), `app.js` (all logic, plain globals/objects, loaded as a single script).
   separate screens: `mic-gate` → `calibration-panel` → `play-surface` → `play-results`.
 
 **Song data** (`songs/*.json`, indexed by `songs/manifest.json`): `{ title, artist, bpm, difficulty,
-tuning, notes: [{string, fret, duration}] }`. `string` is 1–6 using standard tab convention (1 =
-high e, 6 = low E), matching `STRING_ORDER` and `STRING_OPEN_FREQ` in `app.js`. `time`/`duration`
-fields exist in the data but are NOT used for pacing — progression is note-by-note, gated only by
-correct pitch detection. All 7 bundled songs assume standard EADGBE tuning (the `tuning` field is
-display-only, via `stringLabel` — `noteFrequency` always uses the standard-tuning constant, so a
-drop-tuned song would show the wrong string labels against correct pitches; avoid adding one
-without also fixing that). Note data was cross-checked against Ultimate Guitar / onestringsongs.com
-transcriptions (simplified to a single string/monophonic line where the real riff uses power
-chords or dyads, since the pitch detector can only track one note at a time) — it was NOT scraped
-programmatically, so don't assume it's automatically in sync if the source tabs are later edited.
+tuning, tuningOffsets, notes: [{string, fret, duration}] }`. `string` is 1–6 using standard tab
+convention (1 = high e, 6 = low E), matching `STRING_ORDER` and `STRING_OPEN_FREQ` in `app.js`.
+`time`/`duration` fields exist in the data but are NOT used for pacing — progression is note-by-
+note, gated only by correct pitch detection.
+
+`tuning` is the display-only string-letter array (low-to-high, i.e. index 0 = string 6/low, index 5
+= string 1/high — matches Ultimate Guitar's compact "Tuning:" field convention) used by
+`stringLabel`. `tuningOffsets` is the optional array that actually matters for pitch: 6 semitone
+offsets from standard EADGBE, indexed `[string1..string6]` (note: opposite order from `tuning`!),
+passed as the third arg to every `noteFrequency(string, fret, tuningOffsets)` call. Omit it (or
+leave all zeros) for standard tuning. Example — Drop D is `[0,0,0,0,0,-2]` (only the low string
+drops a whole step); Drop C is `[-2,-2,-2,-2,-2,-4]` (whole guitar down a step, low string down a
+step further). Get both arrays right and independently cross-checked before adding a drop-tuned
+song — mixing up `tuning`'s low-to-high order with `tuningOffsets`' string-index order is an easy
+mistake (happened once while authoring these; caught by testing against a synthetic tone of the
+expected open-string frequency).
+
+Note data was cross-checked against at least two independent sources (Ultimate Guitar,
+onestringsongs.com, gtdb.org for tuning) per song, simplified to a single string/monophonic line
+where the real riff uses power chords, dyads, or bends (the pitch detector can only track one note
+at a time). It was NOT scraped programmatically — treat it as a one-time transcription, not
+something that stays in sync if the source tabs are later edited. A prior pass (before this
+verification habit existed) had at least one confirmed wrong note that had to be fixed later —
+don't assume old song files are correct without spot-checking if something sounds off.
 
 **Core modules in `app.js`:**
 - `PitchEngine` — owns the mic `MediaStream`/`AudioContext`/`AnalyserNode` and the per-frame
@@ -78,6 +92,12 @@ programmatically, so don't assume it's automatically in sync if the source tabs 
 - `MicDevices` — enumerates `audioinput` devices for the picker on the mic-gate screen (labels
   are blank until permission has been granted once) and remembers the last-picked device in
   `localStorage`.
+- `Metronome` — independent quiet background click, own `AudioContext`, `setTimeout`-scheduled
+  (not sample-accurate, but fine for a practice click). `start(bpm)`/`stop()`/`setBpm(bpm)`; BPM
+  changes take effect on the next tick without needing a restart. `PlayMode.setupMetronome` (called
+  from `load`) populates the `#metronome-bpm` `<select>` from `METRONOME_BPM_PRESETS` plus the
+  song's own BPM if not already a preset, and defaults selection to the song's BPM. `PlayMode.stop`
+  also stops it, so it doesn't keep ticking after leaving the play screen.
 
 **Mic session persistence:** `PlayMode.stop()` (called by `Screens.show` on any navigation away
 from `play`) only pauses — it does not close `PitchEngine`'s `AudioContext`/stream. `PlayMode.load`

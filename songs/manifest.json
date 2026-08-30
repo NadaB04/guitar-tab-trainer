@@ -5,5 +5,9 @@
   { "id": "iron-man", "file": "iron-man.json" },
   { "id": "paranoid", "file": "paranoid.json" },
   { "id": "sunshine-of-your-love", "file": "sunshine-of-your-love.json" },
-  { "id": "come-as-you-are", "file": "come-as-you-are.json" }
+  { "id": "come-as-you-are", "file": "come-as-you-are.json" },
+  { "id": "animal-i-have-become", "file": "animal-i-have-become.json" },
+  { "id": "i-hate-everything-about-you", "file": "i-hate-everything-about-you.json" },
+  { "id": "wait-and-bleed", "file": "wait-and-bleed.json" },
+  { "id": "chop-suey", "file": "chop-suey.json" }
 ]

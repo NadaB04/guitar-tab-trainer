@@ -1,0 +1,26 @@
+{
+  "title": "Chop Suey!",
+  "artist": "System of a Down",
+  "bpm": 127,
+  "difficulty": "Advanced",
+  "tuning": ["C", "G", "C", "F", "A", "D"],
+  "tuningOffsets": [-2, -2, -2, -2, -2, -4],
+  "notes": [
+    { "time": 0.0, "string": 3, "fret": 5, "duration": 0.24 },
+    { "time": 0.24, "string": 3, "fret": 5, "duration": 0.24 },
+    { "time": 0.48, "string": 3, "fret": 5, "duration": 0.24 },
+    { "time": 0.72, "string": 3, "fret": 5, "duration": 0.24 },
+    { "time": 0.96, "string": 3, "fret": 7, "duration": 0.24 },
+    { "time": 1.2, "string": 3, "fret": 7, "duration": 0.24 },
+    { "time": 1.44, "string": 3, "fret": 7, "duration": 0.24 },
+    { "time": 1.68, "string": 3, "fret": 7, "duration": 0.24 },
+    { "time": 1.92, "string": 3, "fret": 4, "duration": 0.24 },
+    { "time": 2.16, "string": 3, "fret": 4, "duration": 0.24 },
+    { "time": 2.4, "string": 3, "fret": 4, "duration": 0.24 },
+    { "time": 2.64, "string": 3, "fret": 4, "duration": 0.24 },
+    { "time": 2.88, "string": 3, "fret": 2, "duration": 0.24 },
+    { "time": 3.12, "string": 3, "fret": 2, "duration": 0.24 },
+    { "time": 3.36, "string": 3, "fret": 2, "duration": 0.24 },
+    { "time": 3.6, "string": 3, "fret": 2, "duration": 0.4 }
+  ]
+}

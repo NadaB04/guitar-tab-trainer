@@ -265,6 +265,28 @@ button:active { transform: scale(0.97); }
 .gain-row input[type="range"] { flex: 1; }
 .gain-row #gain-value { font-family: "Consolas", monospace; width: 34px; text-align: right; }
 
+.metronome-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin: 0 auto;
+}
+.pill.small { padding: 7px 14px; font-size: 0.78rem; }
+.pill.ghost.active {
+  background: rgba(29, 185, 84, 0.15);
+  border-color: var(--green-bright);
+  color: var(--green-bright);
+}
+#metronome-bpm {
+  background: var(--bg-highlight);
+  color: var(--text);
+  border: 1px solid #444;
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 0.78rem;
+}
+
 .listening-tools.hidden { display: none; }
 
 .calibration-panel {

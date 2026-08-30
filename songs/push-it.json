@@ -1,0 +1,25 @@
+{
+  "title": "Push It",
+  "artist": "Static-X",
+  "bpm": 138,
+  "difficulty": "Intermediate",
+  "tuning": ["C", "G", "C", "F", "A", "D"],
+  "tuningOffsets": [-2, -2, -2, -2, -2, -4],
+  "notes": [
+    { "time": 0.0, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 0.15, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 0.3, "string": 6, "fret": 3, "duration": 0.15 },
+    { "time": 0.45, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 0.6, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 0.75, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 0.9, "string": 6, "fret": 3, "duration": 0.2 },
+
+    { "time": 1.1, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 1.25, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 1.4, "string": 6, "fret": 3, "duration": 0.15 },
+    { "time": 1.55, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 1.7, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 1.85, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 2.0, "string": 6, "fret": 3, "duration": 0.3 }
+  ]
+}

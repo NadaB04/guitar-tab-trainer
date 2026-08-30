@@ -15,5 +15,8 @@
   { "id": "down-with-the-sickness", "file": "down-with-the-sickness.json" },
   { "id": "i-stand-alone", "file": "i-stand-alone.json" },
   { "id": "the-diary-of-jane", "file": "the-diary-of-jane.json" },
-  { "id": "would", "file": "would.json" }
+  { "id": "would", "file": "would.json" },
+  { "id": "du-hast", "file": "du-hast.json" },
+  { "id": "my-own-summer", "file": "my-own-summer.json" },
+  { "id": "push-it", "file": "push-it.json" }
 ]

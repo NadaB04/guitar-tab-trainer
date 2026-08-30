@@ -1,0 +1,18 @@
+{
+  "title": "Say It Ain't So",
+  "artist": "Weezer",
+  "bpm": 93,
+  "difficulty": "Beginner",
+  "tuning": ["E", "A", "D", "G", "B", "E"],
+  "notes": [
+    { "time": 0.0, "string": 5, "fret": 3, "duration": 0.4 },
+    { "time": 0.4, "string": 6, "fret": 3, "duration": 0.4 },
+    { "time": 0.8, "string": 6, "fret": 4, "duration": 0.4 },
+    { "time": 1.2, "string": 5, "fret": 6, "duration": 0.6 },
+
+    { "time": 1.9, "string": 5, "fret": 3, "duration": 0.4 },
+    { "time": 2.3, "string": 6, "fret": 3, "duration": 0.4 },
+    { "time": 2.7, "string": 6, "fret": 4, "duration": 0.4 },
+    { "time": 3.1, "string": 5, "fret": 6, "duration": 0.7 }
+  ]
+}

@@ -29,8 +29,10 @@ theme), `app.js` (all logic, plain globals/objects, loaded as a single script).
 **Song data** (`songs/*.json`, indexed by `songs/manifest.json`): `{ title, artist, bpm, difficulty,
 tuning, tuningOffsets, notes: [{string, fret, duration}] }`. `string` is 1–6 using standard tab
 convention (1 = high e, 6 = low E), matching `STRING_ORDER` and `STRING_OPEN_FREQ` in `app.js`.
-`time`/`duration` fields exist in the data but are NOT used for pacing — progression is note-by-
-note, gated only by correct pitch detection.
+`time`/`duration` (seconds) drive the track's horizontal layout and each note's sustain-tail width
+(see `PlayMode.computeNotePositions` below) but are NOT used for pacing/gating — progression is
+still note-by-note, advancing only on correct pitch detection regardless of how long you actually
+held it or when you played it relative to the song's tempo.
 
 `tuning` is the display-only string-letter array (low-to-high, i.e. index 0 = string 6/low, index 5
 = string 1/high — matches Ultimate Guitar's compact "Tuning:" field convention) used by
@@ -79,9 +81,15 @@ don't assume old song files are correct without spot-checking if something sound
   played, `reattackNeeded`/`trackReattack` block it from re-matching on the previous note's own
   decaying ring — it needs either a silence gap or an RMS onset spike first. Renders the
   horizontal scrolling tab (`buildTrackStrip`/`updateTrackTransform`): all notes are real DOM
-  elements (diamond "gem" chips) laid out left-to-right by index × `SPACING`; the strip is
-  CSS-transformed so the current note sits under the fixed `.playhead`, giving the right-to-left
-  scroll effect without a canvas. Tracks `combo`/`bestCombo` for the on-screen streak badge.
+  elements (diamond "gem" chips, each with a "sustain tail" bar behind it) laid out left-to-right
+  via `computeNotePositions()`, which places each chip by its real `time` field (seconds) ×
+  `PIXELS_PER_SECOND` rather than a flat per-index spacing — so gaps between chips reflect the
+  song's actual rhythm, clamped to `MIN_NOTE_GAP` so fast passages don't visually collide. Each
+  tail's width comes from the note's `duration`, clamped to `[MIN_TAIL_WIDTH, MAX_TAIL_WIDTH]`, so
+  longer/shorter notes are visually distinguishable even though matching is still pitch-only (no
+  timing is enforced — this is a visual cue, not a new gate). The strip is CSS-transformed so the
+  current note sits under the fixed `.playhead`, giving the right-to-left scroll effect without a
+  canvas. Tracks `combo`/`bestCombo` for the on-screen streak badge.
 - `SFX` — small synthesized sounds on their own `AudioContext` (independent of `PitchEngine`'s, so
   it works pre-permission). `pluck(freq)` fires on every correct hit at the exact pitch of the note
   just played — this doubles as a lightweight "backing track": there's no way to legally or

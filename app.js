@@ -13,8 +13,16 @@ const LANE_COLORS = {
 const STRING_OPEN_FREQ = { 1: 329.63, 2: 246.94, 3: 196.0, 4: 146.83, 5: 110.0, 6: 82.41 };
 
 const ROW_HEIGHT = 56;
-const SPACING = 80;
+const SPACING = 80; // fallback spacing for notes with no meaningful time gap
 const PLAYHEAD_X = 90;
+
+// Rhythm layout: note x-position is driven by each note's real `time` (seconds) instead of
+// a fixed per-index spacing, so the horizontal gap between chips reflects the actual rhythm.
+// A "sustain tail" behind each chip, sized from `duration`, shows how long to hold it.
+const PIXELS_PER_SECOND = 140;
+const MIN_NOTE_GAP = 55;   // floor so fast passages don't visually collide
+const MIN_TAIL_WIDTH = 10; // stays visible even for very short/staccato notes
+const MAX_TAIL_WIDTH = 220; // cap so a long held final note doesn't dominate the strip
 
 const MATCH_CENTS_TOLERANCE = 35;
 const CONFIRM_FRAMES = 8;        // ~130ms of a stable correct pitch before it counts
@@ -590,26 +598,52 @@ const PlayMode = {
     el.innerHTML = STRING_ORDER.map((s) => `<div class="string-label">${stringLabel(this.song, s)}</div>`).join("");
   },
 
+  // One x-position per note, driven by its real `time` field (seconds) rather than a flat
+  // per-index spacing, so the horizontal gap between chips reflects the song's actual
+  // rhythm. `MIN_NOTE_GAP` keeps fast/simultaneous notes from visually overlapping.
+  computeNotePositions() {
+    let prevX = -Infinity;
+    return this.notes.map((note) => {
+      let x = PLAYHEAD_X + (note.time || 0) * PIXELS_PER_SECOND;
+      if (x < prevX + MIN_NOTE_GAP) x = prevX + MIN_NOTE_GAP;
+      prevX = x;
+      const tailWidth = Math.max(MIN_TAIL_WIDTH, Math.min((note.duration || 0) * PIXELS_PER_SECOND, MAX_TAIL_WIDTH));
+      return { x, tailWidth };
+    });
+  },
+
   buildTrackStrip() {
     const strip = document.getElementById("track-strip");
-    const width = this.notes.length * SPACING + 400;
+    this.notePositions = this.computeNotePositions();
+    const lastX = this.notePositions.length ? this.notePositions[this.notePositions.length - 1].x : 0;
+    const width = lastX + 400;
     strip.style.width = `${width}px`;
 
     const lines = STRING_ORDER.map(
       (s) => `<div class="staff-line" style="top:${this.rowY(s)}px; width:${width}px;"></div>`
     ).join("");
 
+    const tails = this.notes
+      .map((note, i) => {
+        const { x, tailWidth } = this.notePositions[i];
+        const y = this.rowY(note.string);
+        return `<div class="note-tail upcoming" data-index="${i}"
+          style="left:${x}px; top:${y}px; width:${tailWidth}px; background:${LANE_COLORS[note.string]};"></div>`;
+      })
+      .join("");
+
     const chips = this.notes
       .map((note, i) => {
-        const x = i * SPACING + SPACING / 2;
+        const { x } = this.notePositions[i];
         const y = this.rowY(note.string);
         return `<div class="note-chip upcoming" data-index="${i}"
           style="left:${x}px; top:${y}px; background:${LANE_COLORS[note.string]};"><span>${note.fret}</span></div>`;
       })
       .join("");
 
-    strip.innerHTML = lines + chips;
+    strip.innerHTML = lines + tails + chips;
     this.chipEls = Array.from(strip.querySelectorAll(".note-chip"));
+    this.tailEls = Array.from(strip.querySelectorAll(".note-tail"));
   },
 
   rowY(stringNum) {
@@ -618,10 +652,13 @@ const PlayMode = {
 
   updateTrackTransform() {
     const strip = document.getElementById("track-strip");
-    const targetX = this.currentIndex * SPACING + SPACING / 2;
+    const positions = this.notePositions;
+    const targetX = positions[this.currentIndex]
+      ? positions[this.currentIndex].x
+      : positions[positions.length - 1].x;
     strip.style.transform = `translateX(${PLAYHEAD_X - targetX}px)`;
 
-    this.chipEls.forEach((el, i) => {
+    const setState = (el, i) => {
       el.classList.remove("played-correct", "played-wrong", "current", "upcoming", "match-flash");
       if (i < this.currentIndex) {
         el.classList.add(this.results[i] === "correct" ? "played-correct" : "played-wrong");
@@ -630,7 +667,10 @@ const PlayMode = {
       } else {
         el.classList.add("upcoming");
       }
-    });
+    };
+
+    this.tailEls.forEach(setState);
+    this.chipEls.forEach(setState);
   },
 
   renderTarget() {

@@ -517,6 +517,23 @@ button:active { transform: scale(0.97); }
   animation: chip-burst 0.32s cubic-bezier(0.22, 1, 0.36, 1);
   box-shadow: 0 0 0 10px rgba(29, 185, 84, 0), 0 0 34px rgba(29, 185, 84, 0.9);
 }
+/* Sustain tail — shows how long a note should be held, sized from its real duration
+   in PlayMode.computeNotePositions(). Sits behind its chip (lower z-index, same lane color). */
+.note-tail {
+  position: absolute;
+  height: 10px;
+  margin-top: -5px;
+  border-radius: 5px;
+  z-index: 1;
+  opacity: 0.4;
+  transition: opacity 0.2s ease, filter 0.2s ease;
+}
+.note-tail.played-correct { opacity: 0.15; filter: saturate(0.5); }
+.note-tail.played-wrong { opacity: 0.15; filter: grayscale(0.5); }
+.note-tail.upcoming { opacity: 0.4; }
+.note-tail.current { opacity: 0.75; height: 14px; margin-top: -7px; }
+.note-chip { z-index: 2; }
+
 @keyframes chip-burst {
   0% { transform: rotate(45deg) scale(1.3); }
   40% { transform: rotate(45deg) scale(1.85); box-shadow: 0 0 0 16px rgba(29, 185, 84, 0.28), 0 0 40px rgba(29, 185, 84, 1); }

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>ShredType — Guitar Tab Trainer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+
+    <header id="top-bar">
+      <div class="brand" onclick="Screens.show('menu')">
+        <span class="brand-dot"></span>
+        <span>ShredType</span>
+      </div>
+    </header>
+
+    <!-- SONG SELECT -->
+    <section id="screen-menu" class="screen active">
+      <h1 class="page-title">Learn a riff</h1>
+      <p class="tagline">Plug in, play along, and the tab only moves forward when you actually play the right note.</p>
+      <div id="song-list" class="song-grid"></div>
+    </section>
+
+    <!-- PLAY MODE -->
+    <section id="screen-play" class="screen">
+      <div class="play-topline">
+        <button id="play-back-btn" class="pill ghost">← Back</button>
+        <div class="play-song-info">
+          <div id="play-song-name">—</div>
+          <div id="play-song-progress">0 / 0 notes</div>
+        </div>
+        <button id="play-restart-btn" class="pill ghost">Restart</button>
+      </div>
+
+      <div id="mic-gate" class="mic-gate">
+        <p>ShredType listens through your microphone and confirms each note before moving on.</p>
+        <div class="mic-device-row">
+          <label for="mic-device-select">Input device</label>
+          <select id="mic-device-select"></select>
+        </div>
+        <button id="mic-start-btn" class="pill primary">🎤 Start Listening</button>
+        <p id="mic-error" class="mic-error"></p>
+      </div>
+
+      <div id="listening-tools" class="listening-tools hidden">
+        <div class="level-meter-row">
+          <span class="level-meter-label">Input</span>
+          <div class="level-meter-track">
+            <div id="level-meter-fill" class="level-meter-fill"></div>
+          </div>
+        </div>
+        <div class="gain-row">
+          <span class="level-meter-label">Boost</span>
+          <input id="gain-slider" type="range" min="1" max="30" step="1" value="12" />
+          <span id="gain-value">12×</span>
+        </div>
+      </div>
+
+      <div id="calibration-panel" class="calibration-panel hidden">
+        <p>Pluck any string, one at a time — let's make sure ShredType can hear it clearly before you start the riff.</p>
+        <div id="calib-note" class="calib-note">—</div>
+        <div id="calib-detail" class="calib-detail">Waiting for a note…</div>
+        <button id="calib-done-btn" class="pill primary">Sounds good — start the riff</button>
+      </div>
+
+      <div id="play-surface" class="play-surface hidden">
+        <div class="target-panel">
+          <div class="target-label">Play this note</div>
+          <div id="target-note" class="target-note">—</div>
+          <div id="target-hint" class="target-hint">—</div>
+        </div>
+
+        <div class="tuner">
+          <div class="tuner-track">
+            <div id="tuner-zone" class="tuner-zone"></div>
+            <div id="tuner-needle" class="tuner-needle"></div>
+          </div>
+          <div id="tuner-readout" class="tuner-readout">Listening…</div>
+        </div>
+
+        <div class="track-container">
+          <div class="string-labels" id="string-labels"></div>
+          <div class="track-viewport">
+            <div class="playhead"></div>
+            <div id="track-strip" class="track-strip"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="play-results" class="results hidden">
+        <h2>Riff Cleared! 🤘</h2>
+        <p id="play-results-body"></p>
+        <button id="play-replay-btn" class="pill primary">Play Again</button>
+        <button id="play-menu-btn" class="pill ghost">Back to Songs</button>
+      </div>
+    </section>
+
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>

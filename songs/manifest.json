@@ -20,5 +20,7 @@
   { "id": "my-own-summer", "file": "my-own-summer.json" },
   { "id": "push-it", "file": "push-it.json" },
   { "id": "bat-country", "file": "bat-country.json" },
-  { "id": "tears-dont-fall", "file": "tears-dont-fall.json" }
+  { "id": "tears-dont-fall", "file": "tears-dont-fall.json" },
+  { "id": "ace-of-spades", "file": "ace-of-spades.json" },
+  { "id": "run-to-the-hills", "file": "run-to-the-hills.json" }
 ]

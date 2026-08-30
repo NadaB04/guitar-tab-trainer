@@ -24,5 +24,6 @@
   { "id": "ace-of-spades", "file": "ace-of-spades.json" },
   { "id": "run-to-the-hills", "file": "run-to-the-hills.json" },
   { "id": "back-in-black", "file": "back-in-black.json" },
-  { "id": "sweet-child-o-mine", "file": "sweet-child-o-mine.json" }
+  { "id": "sweet-child-o-mine", "file": "sweet-child-o-mine.json" },
+  { "id": "smells-like-teen-spirit", "file": "smells-like-teen-spirit.json" }
 ]

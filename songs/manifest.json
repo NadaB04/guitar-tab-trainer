@@ -9,5 +9,8 @@
   { "id": "animal-i-have-become", "file": "animal-i-have-become.json" },
   { "id": "i-hate-everything-about-you", "file": "i-hate-everything-about-you.json" },
   { "id": "wait-and-bleed", "file": "wait-and-bleed.json" },
-  { "id": "chop-suey", "file": "chop-suey.json" }
+  { "id": "chop-suey", "file": "chop-suey.json" },
+  { "id": "master-of-puppets", "file": "master-of-puppets.json" },
+  { "id": "walk", "file": "walk.json" },
+  { "id": "down-with-the-sickness", "file": "down-with-the-sickness.json" }
 ]

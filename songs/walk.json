@@ -1,0 +1,26 @@
+{
+  "title": "Walk",
+  "artist": "Pantera",
+  "bpm": 97,
+  "difficulty": "Intermediate",
+  "tuning": ["D", "G", "C", "F", "A", "D"],
+  "tuningOffsets": [-2, -2, -2, -2, -2, -2],
+  "notes": [
+    { "time": 0.0, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 0.15, "string": 6, "fret": 1, "duration": 0.15 },
+    { "time": 0.3, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 0.45, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 0.6, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 0.75, "string": 6, "fret": 1, "duration": 0.15 },
+    { "time": 0.9, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 1.05, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 1.2, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 1.35, "string": 6, "fret": 1, "duration": 0.15 },
+    { "time": 1.5, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 1.65, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 1.8, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 1.95, "string": 6, "fret": 1, "duration": 0.15 },
+    { "time": 2.1, "string": 6, "fret": 0, "duration": 0.15 },
+    { "time": 2.25, "string": 6, "fret": 0, "duration": 0.3 }
+  ]
+}

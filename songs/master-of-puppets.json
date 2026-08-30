@@ -1,0 +1,28 @@
+{
+  "title": "Master of Puppets",
+  "artist": "Metallica",
+  "bpm": 212,
+  "difficulty": "Advanced",
+  "tuning": ["E", "A", "D", "G", "B", "E"],
+  "notes": [
+    { "time": 0.0, "string": 6, "fret": 0, "duration": 0.14 },
+    { "time": 0.14, "string": 6, "fret": 0, "duration": 0.14 },
+    { "time": 0.28, "string": 6, "fret": 0, "duration": 0.14 },
+    { "time": 0.42, "string": 6, "fret": 0, "duration": 0.14 },
+    { "time": 0.56, "string": 6, "fret": 0, "duration": 0.14 },
+    { "time": 0.7, "string": 6, "fret": 5, "duration": 0.14 },
+    { "time": 0.84, "string": 6, "fret": 0, "duration": 0.14 },
+    { "time": 0.98, "string": 6, "fret": 5, "duration": 0.14 },
+    { "time": 1.12, "string": 6, "fret": 5, "duration": 0.3 },
+
+    { "time": 1.42, "string": 6, "fret": 0, "duration": 0.14 },
+    { "time": 1.56, "string": 6, "fret": 0, "duration": 0.14 },
+    { "time": 1.7, "string": 6, "fret": 0, "duration": 0.14 },
+    { "time": 1.84, "string": 6, "fret": 0, "duration": 0.14 },
+    { "time": 1.98, "string": 6, "fret": 0, "duration": 0.14 },
+    { "time": 2.12, "string": 6, "fret": 5, "duration": 0.14 },
+    { "time": 2.26, "string": 6, "fret": 0, "duration": 0.14 },
+    { "time": 2.4, "string": 6, "fret": 5, "duration": 0.14 },
+    { "time": 2.54, "string": 6, "fret": 5, "duration": 0.35 }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "title": "Sweet Child O' Mine",
+  "artist": "Guns N' Roses",
+  "bpm": 125,
+  "difficulty": "Intermediate",
+  "tuning": ["Eb", "Ab", "Db", "Gb", "Bb", "Eb"],
+  "tuningOffsets": [-1, -1, -1, -1, -1, -1],
+  "notes": [
+    { "time": 0.0, "string": 4, "fret": 12, "duration": 0.2 },
+    { "time": 0.2, "string": 2, "fret": 15, "duration": 0.2 },
+    { "time": 0.4, "string": 3, "fret": 14, "duration": 0.2 },
+    { "time": 0.6, "string": 3, "fret": 12, "duration": 0.2 },
+    { "time": 0.8, "string": 1, "fret": 15, "duration": 0.2 },
+    { "time": 1.0, "string": 3, "fret": 14, "duration": 0.2 },
+    { "time": 1.2, "string": 1, "fret": 14, "duration": 0.2 },
+    { "time": 1.4, "string": 3, "fret": 14, "duration": 0.3 },
+
+    { "time": 1.7, "string": 4, "fret": 12, "duration": 0.2 },
+    { "time": 1.9, "string": 2, "fret": 15, "duration": 0.2 },
+    { "time": 2.1, "string": 3, "fret": 14, "duration": 0.2 },
+    { "time": 2.3, "string": 3, "fret": 12, "duration": 0.2 },
+    { "time": 2.5, "string": 1, "fret": 15, "duration": 0.2 },
+    { "time": 2.7, "string": 3, "fret": 14, "duration": 0.2 },
+    { "time": 2.9, "string": 1, "fret": 14, "duration": 0.2 },
+    { "time": 3.1, "string": 3, "fret": 14, "duration": 0.4 }
+  ]
+}

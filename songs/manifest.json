@@ -22,5 +22,7 @@
   { "id": "bat-country", "file": "bat-country.json" },
   { "id": "tears-dont-fall", "file": "tears-dont-fall.json" },
   { "id": "ace-of-spades", "file": "ace-of-spades.json" },
-  { "id": "run-to-the-hills", "file": "run-to-the-hills.json" }
+  { "id": "run-to-the-hills", "file": "run-to-the-hills.json" },
+  { "id": "back-in-black", "file": "back-in-black.json" },
+  { "id": "sweet-child-o-mine", "file": "sweet-child-o-mine.json" }
 ]

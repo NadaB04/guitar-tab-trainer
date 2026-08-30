@@ -1,0 +1,18 @@
+{
+  "title": "Back in Black",
+  "artist": "AC/DC",
+  "bpm": 94,
+  "difficulty": "Beginner",
+  "tuning": ["E", "A", "D", "G", "B", "E"],
+  "notes": [
+    { "time": 0.0, "string": 6, "fret": 0, "duration": 0.4 },
+    { "time": 0.4, "string": 4, "fret": 0, "duration": 0.4 },
+    { "time": 0.8, "string": 5, "fret": 0, "duration": 0.4 },
+    { "time": 1.2, "string": 6, "fret": 0, "duration": 0.6 },
+
+    { "time": 1.9, "string": 6, "fret": 0, "duration": 0.4 },
+    { "time": 2.3, "string": 4, "fret": 0, "duration": 0.4 },
+    { "time": 2.7, "string": 5, "fret": 0, "duration": 0.4 },
+    { "time": 3.1, "string": 6, "fret": 0, "duration": 0.7 }
+  ]
+}

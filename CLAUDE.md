@@ -26,10 +26,17 @@ theme), `app.js` (all logic, plain globals/objects, loaded as a single script).
 - `play` — the practice screen. Has sub-states toggled by hiding/showing divs rather than
   separate screens: `mic-gate` → `calibration-panel` → `play-surface` → `play-results`.
 
-**Song data** (`songs/*.json`): `{ title, artist, bpm, difficulty, tuning, notes: [{string, fret,
-duration}] }`. `string` is 1–6 using standard tab convention (1 = high e, 6 = low E), matching
-`STRING_ORDER` and `STRING_OPEN_FREQ` in `app.js`. `time`/`duration` fields exist in the data but
-are NOT used for pacing — progression is note-by-note, gated only by correct pitch detection.
+**Song data** (`songs/*.json`, indexed by `songs/manifest.json`): `{ title, artist, bpm, difficulty,
+tuning, notes: [{string, fret, duration}] }`. `string` is 1–6 using standard tab convention (1 =
+high e, 6 = low E), matching `STRING_ORDER` and `STRING_OPEN_FREQ` in `app.js`. `time`/`duration`
+fields exist in the data but are NOT used for pacing — progression is note-by-note, gated only by
+correct pitch detection. All 7 bundled songs assume standard EADGBE tuning (the `tuning` field is
+display-only, via `stringLabel` — `noteFrequency` always uses the standard-tuning constant, so a
+drop-tuned song would show the wrong string labels against correct pitches; avoid adding one
+without also fixing that). Note data was cross-checked against Ultimate Guitar / onestringsongs.com
+transcriptions (simplified to a single string/monophonic line where the real riff uses power
+chords or dyads, since the pitch detector can only track one note at a time) — it was NOT scraped
+programmatically, so don't assume it's automatically in sync if the source tabs are later edited.
 
 **Core modules in `app.js`:**
 - `PitchEngine` — owns the mic `MediaStream`/`AudioContext`/`AnalyserNode` and the per-frame
@@ -52,13 +59,32 @@ are NOT used for pacing — progression is note-by-note, gated only by correct p
   `centsBetween`) against the current target note's frequency (`noteFrequency(string, fret)`).
   Requires `CONFIRM_FRAMES` consecutive in-tolerance frames to advance (fast) or
   `WRONG_CONFIRM_FRAMES` consecutive out-of-tolerance frames to log a miss (slower, to ride out
-  pick-attack transient noise), each followed by a short cooldown. Renders the horizontal
-  scrolling tab (`buildTrackStrip`/`updateTrackTransform`): all notes are real DOM elements laid
-  out left-to-right by index × `SPACING`; the strip is CSS-transformed so the current note sits
-  under the fixed `.playhead`, giving the right-to-left scroll effect without a canvas.
+  pick-attack transient noise), each followed by a short cooldown. A frame that doesn't match the
+  current target but does match one of the previous 1-2 notes (`isRecentBleed`) is treated as
+  neutral ring-through, not a miss. When the next target note is the same pitch as the one just
+  played, `reattackNeeded`/`trackReattack` block it from re-matching on the previous note's own
+  decaying ring — it needs either a silence gap or an RMS onset spike first. Renders the
+  horizontal scrolling tab (`buildTrackStrip`/`updateTrackTransform`): all notes are real DOM
+  elements (diamond "gem" chips) laid out left-to-right by index × `SPACING`; the strip is
+  CSS-transformed so the current note sits under the fixed `.playhead`, giving the right-to-left
+  scroll effect without a canvas. Tracks `combo`/`bestCombo` for the on-screen streak badge.
+- `SFX` — small synthesized sounds on their own `AudioContext` (independent of `PitchEngine`'s, so
+  it works pre-permission). `pluck(freq)` fires on every correct hit at the exact pitch of the note
+  just played — this doubles as a lightweight "backing track": there's no way to legally or
+  technically play the actual studio recording in sync with an arbitrary player's timing, but an
+  echo of each note fired the instant it's played is inherently paced to them (never runs ahead,
+  silently waits out pauses since it's driven by hits, not a clock). `miss()` is filtered noise;
+  `clear()` is the song-complete fanfare.
 - `MicDevices` — enumerates `audioinput` devices for the picker on the mic-gate screen (labels
   are blank until permission has been granted once) and remembers the last-picked device in
   `localStorage`.
+
+**Mic session persistence:** `PlayMode.stop()` (called by `Screens.show` on any navigation away
+from `play`) only pauses — it does not close `PitchEngine`'s `AudioContext`/stream. `PlayMode.load`
+checks `PitchEngine.ctx`: if a session is already running it skips straight to `play-surface`,
+bypassing `mic-gate` and `calibration-panel`. So the permission/calibration flow only happens once
+per page load, not once per song. If a genuine full mic teardown is ever needed, call
+`PitchEngine.stop()` directly — it's no longer invoked automatically anywhere.
 
 **Testing without hardware:** since this has only ever been driven from an automated browser
 session with no real guitar/mic attached, verification relies on constructing a fake

@@ -1,0 +1,32 @@
+{
+  "title": "Paranoid",
+  "artist": "Black Sabbath",
+  "bpm": 164,
+  "difficulty": "Intermediate",
+  "tuning": ["E", "A", "D", "G", "B", "E"],
+  "notes": [
+    { "time": 0.0, "string": 6, "fret": 12, "duration": 0.18 },
+    { "time": 0.18, "string": 6, "fret": 12, "duration": 0.18 },
+    { "time": 0.36, "string": 6, "fret": 12, "duration": 0.18 },
+    { "time": 0.54, "string": 6, "fret": 12, "duration": 0.18 },
+    { "time": 0.72, "string": 6, "fret": 10, "duration": 0.18 },
+    { "time": 0.9, "string": 6, "fret": 10, "duration": 0.18 },
+    { "time": 1.08, "string": 6, "fret": 10, "duration": 0.18 },
+    { "time": 1.26, "string": 6, "fret": 10, "duration": 0.18 },
+    { "time": 1.44, "string": 6, "fret": 3, "duration": 0.3 },
+    { "time": 1.74, "string": 6, "fret": 10, "duration": 0.3 },
+    { "time": 2.04, "string": 6, "fret": 12, "duration": 0.5 },
+
+    { "time": 2.54, "string": 6, "fret": 12, "duration": 0.18 },
+    { "time": 2.72, "string": 6, "fret": 12, "duration": 0.18 },
+    { "time": 2.9, "string": 6, "fret": 12, "duration": 0.18 },
+    { "time": 3.08, "string": 6, "fret": 12, "duration": 0.18 },
+    { "time": 3.26, "string": 6, "fret": 10, "duration": 0.18 },
+    { "time": 3.44, "string": 6, "fret": 10, "duration": 0.18 },
+    { "time": 3.62, "string": 6, "fret": 10, "duration": 0.18 },
+    { "time": 3.8, "string": 6, "fret": 10, "duration": 0.18 },
+    { "time": 3.98, "string": 6, "fret": 3, "duration": 0.3 },
+    { "time": 4.28, "string": 6, "fret": 10, "duration": 0.3 },
+    { "time": 4.58, "string": 6, "fret": 12, "duration": 0.6 }
+  ]
+}

@@ -251,6 +251,83 @@ const Calibration = {
 };
 
 /* ---------------------------------------------------------------------- *
+ * SFX — small synthesized sounds, own AudioContext (independent of
+ * PitchEngine's mic-analysis context so it works even pre-permission).
+ *
+ * PlayMode.correctHit uses `pluck(targetFreq)` as the hit sound, at the exact
+ * pitch of the note just played. That doubles as a lightweight "backing
+ * track": there's no way to legally or technically play the actual studio
+ * recording in sync with an arbitrary player's timing (no rights to it, and
+ * nothing to fetch it from) — but a synthesized echo of each note, fired the
+ * instant the player nails it, is inherently paced to them exactly: it can
+ * never run ahead, and it silently waits out any pause since it's driven by
+ * their own hits rather than a clock.
+ * ---------------------------------------------------------------------- */
+
+const SFX = {
+  ctx: null,
+
+  ensureCtx() {
+    if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (this.ctx.state === "suspended") this.ctx.resume();
+    return this.ctx;
+  },
+
+  pluck(freq, { volume = 0.18, decay = 0.32 } = {}) {
+    const ctx = this.ensureCtx();
+    const t0 = ctx.currentTime;
+
+    const body = ctx.createOscillator();
+    body.type = "triangle";
+    body.frequency.setValueAtTime(freq, t0);
+    const bodyGain = ctx.createGain();
+    bodyGain.gain.setValueAtTime(0, t0);
+    bodyGain.gain.linearRampToValueAtTime(volume, t0 + 0.004);
+    bodyGain.gain.exponentialRampToValueAtTime(0.0001, t0 + decay);
+    body.connect(bodyGain).connect(ctx.destination);
+    body.start(t0);
+    body.stop(t0 + decay + 0.05);
+
+    // Quiet octave-up bite so it reads as a plucked string, not a pure tone.
+    const bite = ctx.createOscillator();
+    bite.type = "sawtooth";
+    bite.frequency.setValueAtTime(freq * 2, t0);
+    const biteGain = ctx.createGain();
+    biteGain.gain.setValueAtTime(0, t0);
+    biteGain.gain.linearRampToValueAtTime(volume * 0.22, t0 + 0.004);
+    biteGain.gain.exponentialRampToValueAtTime(0.0001, t0 + decay * 0.5);
+    bite.connect(biteGain).connect(ctx.destination);
+    bite.start(t0);
+    bite.stop(t0 + decay * 0.5 + 0.05);
+  },
+
+  miss() {
+    const ctx = this.ensureCtx();
+    const t0 = ctx.currentTime;
+    const size = Math.floor(ctx.sampleRate * 0.12);
+    const buffer = ctx.createBuffer(1, size, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < size; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / size);
+
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    const filter = ctx.createBiquadFilter();
+    filter.type = "lowpass";
+    filter.frequency.setValueAtTime(350, t0);
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.22, t0);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.12);
+    noise.connect(filter).connect(gain).connect(ctx.destination);
+    noise.start(t0);
+  },
+
+  clear() {
+    [523.25, 659.25, 783.99].forEach((f, i) => // C5 E5 G5
+      setTimeout(() => this.pluck(f, { volume: 0.15, decay: 0.4 }), i * 90));
+  },
+};
+
+/* ---------------------------------------------------------------------- *
  * Screens
  * ---------------------------------------------------------------------- */
 
@@ -344,6 +421,9 @@ const PlayMode = {
   reattackSeen: false,
   rmsHistory: [],
 
+  combo: 0,
+  bestCombo: 0,
+
   load(songId, song) {
     this.songId = songId;
     this.song = song;
@@ -356,6 +436,9 @@ const PlayMode = {
     this.lastWrongNoteId = null;
     this.wrongCandidateCount = 0;
     this.listening = false;
+    this.combo = 0;
+    this.bestCombo = 0;
+    this.updateCombo();
     this.rmsHistory = [];
     this.updateReattackState();
 
@@ -412,9 +495,11 @@ const PlayMode = {
   },
 
   stop() {
+    // Pause only — leave the mic stream/AudioContext running so switching songs
+    // (menu -> another song) doesn't re-trigger the mic-permission gate or
+    // calibration screen. PitchEngine keeps its rAF loop going harmlessly idle.
     this.listening = false;
     PitchEngine.onFrame = null;
-    PitchEngine.stop();
   },
 
   buildStringLabels() {
@@ -436,7 +521,7 @@ const PlayMode = {
         const x = i * SPACING + SPACING / 2;
         const y = this.rowY(note.string);
         return `<div class="note-chip upcoming" data-index="${i}"
-          style="left:${x}px; top:${y}px; background:${LANE_COLORS[note.string]};">${note.fret}</div>`;
+          style="left:${x}px; top:${y}px; background:${LANE_COLORS[note.string]};"><span>${note.fret}</span></div>`;
       })
       .join("");
 
@@ -588,7 +673,16 @@ const PlayMode = {
   correctHit() {
     const chip = this.chipEls[this.currentIndex];
     chip.classList.add("match-flash");
+    const justPlayed = this.notes[this.currentIndex];
+    SFX.pluck(noteFrequency(justPlayed.string, justPlayed.fret));
     this.results[this.currentIndex] = this.hadMissOnCurrent ? "wrong-first" : "correct";
+    if (!this.hadMissOnCurrent) {
+      this.combo++;
+      this.bestCombo = Math.max(this.bestCombo, this.combo);
+    } else {
+      this.combo = 0;
+    }
+    this.updateCombo();
     this.hadMissOnCurrent = false;
     this.currentIndex++;
     this.updateProgress();
@@ -600,6 +694,18 @@ const PlayMode = {
       this.finish();
     } else {
       this.renderTarget();
+    }
+  },
+
+  updateCombo() {
+    const badge = document.getElementById("combo-badge");
+    if (this.combo >= 2) {
+      document.getElementById("combo-count").textContent = this.combo;
+      badge.classList.remove("hidden", "combo-pulse");
+      void badge.offsetWidth; // restart the pulse animation
+      badge.classList.add("combo-pulse");
+    } else {
+      badge.classList.add("hidden");
     }
   },
 
@@ -617,9 +723,16 @@ const PlayMode = {
   wrongAttempt() {
     this.wrongAttempts++;
     this.hadMissOnCurrent = true;
+    this.combo = 0;
+    this.updateCombo();
+    SFX.miss();
     const chip = this.chipEls[this.currentIndex];
     chip.style.boxShadow = "0 0 0 4px rgba(241, 94, 108, 0.7)";
     setTimeout(() => { chip.style.boxShadow = ""; }, 220);
+    const track = document.getElementById("track-container");
+    track.classList.remove("shake");
+    void track.offsetWidth;
+    track.classList.add("shake");
   },
 
   finish() {
@@ -627,11 +740,14 @@ const PlayMode = {
     PitchEngine.onFrame = null;
     document.getElementById("target-note").textContent = "🎉 All done!";
     document.getElementById("target-hint").textContent = "";
+    document.getElementById("combo-badge").classList.add("hidden");
     bumpCompletions(this.songId);
+    SFX.clear();
     const clean = this.wrongAttempts === 0;
-    document.getElementById("play-results-body").textContent = clean
+    const comboNote = this.bestCombo >= this.notes.length ? " Full combo!" : ` Best streak: ${this.bestCombo}.`;
+    document.getElementById("play-results-body").textContent = (clean
       ? "Clean run — every note on the first try."
-      : `Cleared with ${this.wrongAttempts} missed attempt${this.wrongAttempts === 1 ? "" : "s"} along the way.`;
+      : `Cleared with ${this.wrongAttempts} missed attempt${this.wrongAttempts === 1 ? "" : "s"} along the way.`) + comboNote;
     document.getElementById("play-results").classList.remove("hidden");
   },
 };

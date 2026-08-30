@@ -68,6 +68,7 @@
 
       <div id="play-surface" class="play-surface hidden">
         <div class="target-panel">
+          <div id="combo-badge" class="combo-badge hidden">🔥 <span id="combo-count">0</span> COMBO</div>
           <div class="target-label">Play this note</div>
           <div id="target-note" class="target-note">—</div>
           <div id="target-hint" class="target-hint">—</div>
@@ -81,9 +82,10 @@
           <div id="tuner-readout" class="tuner-readout">Listening…</div>
         </div>
 
-        <div class="track-container">
+        <div id="track-container" class="track-container">
           <div class="string-labels" id="string-labels"></div>
           <div class="track-viewport">
+            <div class="hit-gate"></div>
             <div class="playhead"></div>
             <div id="track-strip" class="track-strip"></div>
           </div>

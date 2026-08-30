@@ -1,0 +1,30 @@
+{
+  "title": "Sunshine of Your Love",
+  "artist": "Cream",
+  "bpm": 118,
+  "difficulty": "Intermediate",
+  "tuning": ["E", "A", "D", "G", "B", "E"],
+  "notes": [
+    { "time": 0.0, "string": 4, "fret": 12, "duration": 0.3 },
+    { "time": 0.3, "string": 4, "fret": 12, "duration": 0.3 },
+    { "time": 0.6, "string": 4, "fret": 10, "duration": 0.3 },
+    { "time": 0.9, "string": 4, "fret": 12, "duration": 0.5 },
+    { "time": 1.4, "string": 5, "fret": 12, "duration": 0.3 },
+    { "time": 1.7, "string": 5, "fret": 11, "duration": 0.3 },
+    { "time": 2.0, "string": 5, "fret": 10, "duration": 0.4 },
+    { "time": 2.4, "string": 6, "fret": 10, "duration": 0.4 },
+    { "time": 2.8, "string": 5, "fret": 8, "duration": 0.4 },
+    { "time": 3.2, "string": 6, "fret": 10, "duration": 0.7 },
+
+    { "time": 3.9, "string": 4, "fret": 12, "duration": 0.3 },
+    { "time": 4.2, "string": 4, "fret": 12, "duration": 0.3 },
+    { "time": 4.5, "string": 4, "fret": 10, "duration": 0.3 },
+    { "time": 4.8, "string": 4, "fret": 12, "duration": 0.5 },
+    { "time": 5.3, "string": 5, "fret": 12, "duration": 0.3 },
+    { "time": 5.6, "string": 5, "fret": 11, "duration": 0.3 },
+    { "time": 5.9, "string": 5, "fret": 10, "duration": 0.4 },
+    { "time": 6.3, "string": 6, "fret": 10, "duration": 0.4 },
+    { "time": 6.7, "string": 5, "fret": 8, "duration": 0.4 },
+    { "time": 7.1, "string": 6, "fret": 10, "duration": 0.8 }
+  ]
+}

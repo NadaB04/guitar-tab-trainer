@@ -1,0 +1,38 @@
+{
+  "title": "Come As You Are",
+  "artist": "Nirvana",
+  "bpm": 120,
+  "difficulty": "Beginner",
+  "tuning": ["E", "A", "D", "G", "B", "E"],
+  "notes": [
+    { "time": 0.0, "string": 6, "fret": 0, "duration": 0.25 },
+    { "time": 0.25, "string": 6, "fret": 0, "duration": 0.25 },
+    { "time": 0.5, "string": 6, "fret": 1, "duration": 0.25 },
+    { "time": 0.75, "string": 6, "fret": 2, "duration": 0.25 },
+    { "time": 1.0, "string": 6, "fret": 5, "duration": 0.25 },
+    { "time": 1.25, "string": 6, "fret": 2, "duration": 0.25 },
+    { "time": 1.5, "string": 6, "fret": 5, "duration": 0.25 },
+    { "time": 1.75, "string": 6, "fret": 2, "duration": 0.25 },
+    { "time": 2.0, "string": 6, "fret": 2, "duration": 0.25 },
+    { "time": 2.25, "string": 6, "fret": 1, "duration": 0.25 },
+    { "time": 2.5, "string": 6, "fret": 0, "duration": 0.25 },
+    { "time": 2.75, "string": 6, "fret": 7, "duration": 0.25 },
+    { "time": 3.0, "string": 6, "fret": 0, "duration": 0.25 },
+    { "time": 3.25, "string": 6, "fret": 7, "duration": 0.5 },
+
+    { "time": 3.75, "string": 6, "fret": 0, "duration": 0.25 },
+    { "time": 4.0, "string": 6, "fret": 0, "duration": 0.25 },
+    { "time": 4.25, "string": 6, "fret": 1, "duration": 0.25 },
+    { "time": 4.5, "string": 6, "fret": 2, "duration": 0.25 },
+    { "time": 4.75, "string": 6, "fret": 5, "duration": 0.25 },
+    { "time": 5.0, "string": 6, "fret": 2, "duration": 0.25 },
+    { "time": 5.25, "string": 6, "fret": 5, "duration": 0.25 },
+    { "time": 5.5, "string": 6, "fret": 2, "duration": 0.25 },
+    { "time": 5.75, "string": 6, "fret": 2, "duration": 0.25 },
+    { "time": 6.0, "string": 6, "fret": 1, "duration": 0.25 },
+    { "time": 6.25, "string": 6, "fret": 0, "duration": 0.25 },
+    { "time": 6.5, "string": 6, "fret": 7, "duration": 0.25 },
+    { "time": 6.75, "string": 6, "fret": 0, "duration": 0.25 },
+    { "time": 7.0, "string": 6, "fret": 7, "duration": 0.6 }
+  ]
+}

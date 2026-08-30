@@ -1,0 +1,23 @@
+{
+  "title": "Iron Man",
+  "artist": "Black Sabbath",
+  "bpm": 76,
+  "difficulty": "Beginner",
+  "tuning": ["E", "A", "D", "G", "B", "E"],
+  "notes": [
+    { "time": 0.0, "string": 5, "fret": 2, "duration": 0.8 },
+    { "time": 0.8, "string": 5, "fret": 5, "duration": 0.4 },
+    { "time": 1.2, "string": 5, "fret": 5, "duration": 0.4 },
+    { "time": 1.6, "string": 5, "fret": 7, "duration": 0.4 },
+    { "time": 2.0, "string": 5, "fret": 7, "duration": 0.4 },
+    { "time": 2.4, "string": 5, "fret": 10, "duration": 0.4 },
+    { "time": 2.8, "string": 5, "fret": 9, "duration": 0.3 },
+    { "time": 3.1, "string": 5, "fret": 10, "duration": 0.3 },
+    { "time": 3.4, "string": 5, "fret": 9, "duration": 0.3 },
+    { "time": 3.7, "string": 5, "fret": 10, "duration": 0.4 },
+    { "time": 4.1, "string": 5, "fret": 5, "duration": 0.4 },
+    { "time": 4.5, "string": 5, "fret": 5, "duration": 0.4 },
+    { "time": 4.9, "string": 5, "fret": 7, "duration": 0.4 },
+    { "time": 5.3, "string": 5, "fret": 7, "duration": 0.7 }
+  ]
+}

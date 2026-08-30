@@ -12,5 +12,8 @@
   { "id": "chop-suey", "file": "chop-suey.json" },
   { "id": "master-of-puppets", "file": "master-of-puppets.json" },
   { "id": "walk", "file": "walk.json" },
-  { "id": "down-with-the-sickness", "file": "down-with-the-sickness.json" }
+  { "id": "down-with-the-sickness", "file": "down-with-the-sickness.json" },
+  { "id": "i-stand-alone", "file": "i-stand-alone.json" },
+  { "id": "the-diary-of-jane", "file": "the-diary-of-jane.json" },
+  { "id": "would", "file": "would.json" }
 ]

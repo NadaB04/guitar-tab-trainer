@@ -1,0 +1,19 @@
+{
+  "title": "I Stand Alone",
+  "artist": "Godsmack",
+  "bpm": 93,
+  "difficulty": "Intermediate",
+  "tuning": ["C", "G", "C", "F", "A", "D"],
+  "tuningOffsets": [-2, -2, -2, -2, -2, -4],
+  "notes": [
+    { "time": 0.0, "string": 3, "fret": 14, "duration": 0.2 },
+    { "time": 0.2, "string": 3, "fret": 14, "duration": 0.2 },
+    { "time": 0.4, "string": 3, "fret": 15, "duration": 0.2 },
+    { "time": 0.6, "string": 3, "fret": 15, "duration": 0.3 },
+
+    { "time": 0.9, "string": 3, "fret": 14, "duration": 0.2 },
+    { "time": 1.1, "string": 3, "fret": 14, "duration": 0.2 },
+    { "time": 1.3, "string": 3, "fret": 15, "duration": 0.2 },
+    { "time": 1.5, "string": 3, "fret": 15, "duration": 0.4 }
+  ]
+}

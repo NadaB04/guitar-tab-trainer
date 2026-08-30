@@ -1,0 +1,31 @@
+{
+  "title": "The Diary of Jane",
+  "artist": "Breaking Benjamin",
+  "bpm": 78,
+  "difficulty": "Advanced",
+  "tuning": ["Bb", "F", "Bb", "Eb", "G", "C"],
+  "tuningOffsets": [-4, -4, -4, -4, -4, -6],
+  "notes": [
+    { "time": 0.0, "string": 4, "fret": 12, "duration": 0.2 },
+    { "time": 0.2, "string": 3, "fret": 14, "duration": 0.2 },
+    { "time": 0.4, "string": 4, "fret": 12, "duration": 0.2 },
+    { "time": 0.6, "string": 3, "fret": 14, "duration": 0.2 },
+    { "time": 0.8, "string": 4, "fret": 12, "duration": 0.2 },
+    { "time": 1.0, "string": 3, "fret": 14, "duration": 0.2 },
+    { "time": 1.2, "string": 4, "fret": 12, "duration": 0.2 },
+    { "time": 1.4, "string": 3, "fret": 14, "duration": 0.2 },
+    { "time": 1.6, "string": 4, "fret": 12, "duration": 0.2 },
+    { "time": 1.8, "string": 3, "fret": 15, "duration": 0.3 },
+
+    { "time": 2.1, "string": 4, "fret": 12, "duration": 0.2 },
+    { "time": 2.3, "string": 3, "fret": 14, "duration": 0.2 },
+    { "time": 2.5, "string": 4, "fret": 12, "duration": 0.2 },
+    { "time": 2.7, "string": 3, "fret": 14, "duration": 0.2 },
+    { "time": 2.9, "string": 4, "fret": 12, "duration": 0.2 },
+    { "time": 3.1, "string": 3, "fret": 17, "duration": 0.2 },
+    { "time": 3.3, "string": 4, "fret": 12, "duration": 0.2 },
+    { "time": 3.5, "string": 3, "fret": 15, "duration": 0.2 },
+    { "time": 3.7, "string": 4, "fret": 12, "duration": 0.2 },
+    { "time": 3.9, "string": 3, "fret": 14, "duration": 0.3 }
+  ]
+}

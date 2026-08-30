@@ -25,6 +25,13 @@ const MIN_CONFIDENCE = 0.45; // how "periodic" the signal must be — filters ou
 const MIN_RMS = 0.005; // just above mic self-noise — the confidence check (below) does the real noise rejection,
                         // and it's scale-invariant, so this floor can stay low without letting noise back in
 
+// Repeated-note onset detection (see PlayMode.trackReattack): a pick-attack spike is an
+// RMS jump over the recent rolling minimum; the window length trades detection latency
+// against not being fooled by ordinary frame-to-frame jitter in a sustained ring.
+const REATTACK_HISTORY_LEN = 10; // ~150-200ms of frames
+const ONSET_RATIO = 1.6;         // new rms must exceed the recent floor by this factor
+const ONSET_ABS_MULT = 3;        // ...and clear an absolute floor, so near-silent jitter can't trigger it
+
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
 let SONGS = [];
@@ -330,6 +337,13 @@ const PlayMode = {
   hadMissOnCurrent: false,
   listening: false,
 
+  // Repeated-note handling: when the current target is the same pitch as the note just
+  // played, its own decaying ring would otherwise re-satisfy the match instantly. Require
+  // either a silence gap or a fresh pick-attack (RMS spike over the recent ring) first.
+  reattackNeeded: false,
+  reattackSeen: false,
+  rmsHistory: [],
+
   load(songId, song) {
     this.songId = songId;
     this.song = song;
@@ -342,6 +356,8 @@ const PlayMode = {
     this.lastWrongNoteId = null;
     this.wrongCandidateCount = 0;
     this.listening = false;
+    this.rmsHistory = [];
+    this.updateReattackState();
 
     document.getElementById("play-song-name").textContent = `${song.title} — ${song.artist}`;
     document.getElementById("play-results").classList.add("hidden");
@@ -467,6 +483,8 @@ const PlayMode = {
   onPitchFrame(freq) {
     if (!this.listening || this.currentIndex >= this.notes.length) return;
 
+    this.trackReattack(freq, lastPitchDebug.rms);
+
     if (!freq) {
       this.matchCount = 0;
       this.wrongCandidateCount = 0;
@@ -484,6 +502,11 @@ const PlayMode = {
     if (now < this.cooldownUntil) return;
 
     if (Math.abs(cents) <= MATCH_CENTS_TOLERANCE) {
+      if (this.reattackNeeded && !this.reattackSeen) {
+        // Right pitch, but so far it's indistinguishable from the previous identical
+        // note still ringing — wait for a silence gap or a fresh pick-attack spike.
+        return;
+      }
       this.wrongCandidateCount = 0;
       this.matchCount++;
       if (this.matchCount >= CONFIRM_FRAMES) {
@@ -491,6 +514,11 @@ const PlayMode = {
         this.cooldownUntil = now + CORRECT_COOLDOWN_MS;
         this.correctHit();
       }
+    } else if (this.isRecentBleed(freq)) {
+      // Likely the previous note (or the one before it) still ringing/decaying, not a
+      // wrong pick — ignore it: don't reset progress toward the current note, don't
+      // count it as a wrong attempt either.
+      return;
     } else {
       this.matchCount = 0;
       const noteId = Math.round(69 + 12 * Math.log2(freq / 440));
@@ -506,6 +534,39 @@ const PlayMode = {
         this.wrongAttempt();
       }
     }
+  },
+
+  // True if `freq` matches one of the last couple of already-played notes rather than
+  // the current target — i.e. probably string ringing/decay bleeding into this frame.
+  isRecentBleed(freq) {
+    for (const idx of [this.currentIndex - 1, this.currentIndex - 2]) {
+      if (idx < 0) continue;
+      const prev = this.notes[idx];
+      const prevFreq = noteFrequency(prev.string, prev.fret);
+      if (Math.abs(centsBetween(freq, prevFreq)) <= MATCH_CENTS_TOLERANCE) return true;
+    }
+    return false;
+  },
+
+  // Feeds the rolling RMS window used to detect a fresh pick-attack, and flags
+  // reattackSeen the moment one shows up (a silence gap, or a level spike over the
+  // recently-decaying ring) — only matters while reattackNeeded is still unsatisfied.
+  trackReattack(freq, rms) {
+    if (this.reattackNeeded && !this.reattackSeen) {
+      if (!freq) {
+        this.reattackSeen = true; // a genuine gap between the two same-pitch notes
+        this.rmsHistory = [];
+        return;
+      }
+      if (this.rmsHistory.length >= REATTACK_HISTORY_LEN) {
+        const recentMin = Math.min(...this.rmsHistory);
+        if (rms > recentMin * ONSET_RATIO && rms > MIN_RMS * ONSET_ABS_MULT) {
+          this.reattackSeen = true;
+        }
+      }
+    }
+    this.rmsHistory.push(rms);
+    if (this.rmsHistory.length > REATTACK_HISTORY_LEN) this.rmsHistory.shift();
   },
 
   setTuner(freq, cents) {
@@ -532,12 +593,25 @@ const PlayMode = {
     this.currentIndex++;
     this.updateProgress();
     this.updateTrackTransform();
+    this.rmsHistory = [];
+    this.updateReattackState();
 
     if (this.currentIndex >= this.notes.length) {
       this.finish();
     } else {
       this.renderTarget();
     }
+  },
+
+  // Call whenever currentIndex changes: decides whether the new target note needs a
+  // fresh pick-attack (it's the same pitch as the note that was just played).
+  updateReattackState() {
+    const prev = this.notes[this.currentIndex - 1];
+    const note = this.notes[this.currentIndex];
+    this.reattackNeeded =
+      !!prev && !!note &&
+      Math.abs(centsBetween(noteFrequency(note.string, note.fret), noteFrequency(prev.string, prev.fret))) <= MATCH_CENTS_TOLERANCE;
+    this.reattackSeen = !this.reattackNeeded;
   },
 
   wrongAttempt() {

@@ -10,7 +10,7 @@
     { "time": 0.72, "string": 4, "fret": 5, "duration": 0.54 },
     { "time": 1.44, "string": 4, "fret": 0, "duration": 0.36 },
     { "time": 1.8, "string": 4, "fret": 3, "duration": 0.36 },
-    { "time": 2.16, "string": 3, "fret": 7, "duration": 0.36 },
+    { "time": 2.16, "string": 4, "fret": 6, "duration": 0.36 },
     { "time": 2.52, "string": 4, "fret": 5, "duration": 0.72 },
     { "time": 3.6, "string": 4, "fret": 0, "duration": 0.36 },
     { "time": 3.96, "string": 4, "fret": 3, "duration": 0.36 },
@@ -22,7 +22,7 @@
     { "time": 7.22, "string": 4, "fret": 5, "duration": 0.54 },
     { "time": 7.94, "string": 4, "fret": 0, "duration": 0.36 },
     { "time": 8.3, "string": 4, "fret": 3, "duration": 0.36 },
-    { "time": 8.66, "string": 3, "fret": 7, "duration": 0.36 },
+    { "time": 8.66, "string": 4, "fret": 6, "duration": 0.36 },
     { "time": 9.02, "string": 4, "fret": 5, "duration": 0.36 },
     { "time": 9.38, "string": 4, "fret": 3, "duration": 0.36 },
     { "time": 9.74, "string": 4, "fret": 0, "duration": 1.0 }

@@ -1,0 +1,25 @@
+{
+  "title": "The Red",
+  "artist": "Chevelle",
+  "bpm": 172,
+  "difficulty": "Intermediate",
+  "tuning": ["C#", "F#", "B", "E", "G#", "C#"],
+  "tuningOffsets": [-3, -3, -3, -3, -3, -3],
+  "notes": [
+    { "time": 0.0, "string": 5, "fret": 7, "duration": 0.15 },
+    { "time": 0.15, "string": 5, "fret": 9, "duration": 0.15 },
+    { "time": 0.3, "string": 5, "fret": 7, "duration": 0.15 },
+    { "time": 0.45, "string": 5, "fret": 0, "duration": 0.15 },
+    { "time": 0.6, "string": 5, "fret": 5, "duration": 0.15 },
+    { "time": 0.75, "string": 5, "fret": 5, "duration": 0.15 },
+    { "time": 0.9, "string": 5, "fret": 5, "duration": 0.3 },
+
+    { "time": 1.2, "string": 5, "fret": 7, "duration": 0.15 },
+    { "time": 1.35, "string": 5, "fret": 9, "duration": 0.15 },
+    { "time": 1.5, "string": 5, "fret": 7, "duration": 0.15 },
+    { "time": 1.65, "string": 5, "fret": 0, "duration": 0.15 },
+    { "time": 1.8, "string": 5, "fret": 10, "duration": 0.15 },
+    { "time": 1.95, "string": 5, "fret": 10, "duration": 0.15 },
+    { "time": 2.1, "string": 5, "fret": 10, "duration": 0.3 }
+  ]
+}

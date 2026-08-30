@@ -1,0 +1,26 @@
+{
+  "title": "Bat Country",
+  "artist": "Avenged Sevenfold",
+  "bpm": 190,
+  "difficulty": "Advanced",
+  "tuning": ["D", "A", "D", "G", "B", "E"],
+  "tuningOffsets": [0, 0, 0, 0, 0, -2],
+  "notes": [
+    { "time": 0.0, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 0.16, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 0.32, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 0.48, "string": 6, "fret": 6, "duration": 0.16 },
+    { "time": 0.64, "string": 6, "fret": 6, "duration": 0.16 },
+    { "time": 0.8, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 0.96, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 1.12, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 1.28, "string": 6, "fret": 0, "duration": 0.16 },
+    { "time": 1.44, "string": 6, "fret": 5, "duration": 0.16 },
+    { "time": 1.6, "string": 6, "fret": 3, "duration": 0.16 },
+    { "time": 1.76, "string": 6, "fret": 5, "duration": 0.16 },
+    { "time": 1.92, "string": 6, "fret": 6, "duration": 0.16 },
+    { "time": 2.08, "string": 6, "fret": 5, "duration": 0.16 },
+    { "time": 2.24, "string": 6, "fret": 3, "duration": 0.16 },
+    { "time": 2.4, "string": 6, "fret": 0, "duration": 0.3 }
+  ]
+}

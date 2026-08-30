@@ -1,0 +1,19 @@
+{
+  "title": "Tears Don't Fall",
+  "artist": "Bullet For My Valentine",
+  "bpm": 140,
+  "difficulty": "Intermediate",
+  "tuning": ["E", "A", "D", "G", "B", "E"],
+  "notes": [
+    { "time": 0.0, "string": 3, "fret": 9, "duration": 0.15 },
+    { "time": 0.15, "string": 3, "fret": 9, "duration": 0.15 },
+    { "time": 0.3, "string": 3, "fret": 9, "duration": 0.15 },
+    { "time": 0.45, "string": 3, "fret": 9, "duration": 0.15 },
+    { "time": 0.6, "string": 3, "fret": 9, "duration": 0.15 },
+    { "time": 0.75, "string": 3, "fret": 9, "duration": 0.15 },
+    { "time": 0.9, "string": 3, "fret": 10, "duration": 0.15 },
+    { "time": 1.05, "string": 3, "fret": 9, "duration": 0.15 },
+    { "time": 1.2, "string": 3, "fret": 10, "duration": 0.15 },
+    { "time": 1.35, "string": 3, "fret": 12, "duration": 0.3 }
+  ]
+}

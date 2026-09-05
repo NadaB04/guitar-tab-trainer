@@ -24,30 +24,26 @@ const MIN_NOTE_GAP = 55;   // floor so fast passages don't visually collide
 const MIN_TAIL_WIDTH = 10; // stays visible even for very short/staccato notes
 const MAX_TAIL_WIDTH = 220; // cap so a long held final note doesn't dominate the strip
 
-const MATCH_CENTS_TOLERANCE = 35;
-const CONFIRM_FRAMES = 8;        // ~130ms of a stable correct pitch before it counts
-const WRONG_CONFIRM_FRAMES = 18; // ~300ms of a stable wrong pitch — rides out pick-attack noise
-const CORRECT_COOLDOWN_MS = 280;
-const WRONG_COOLDOWN_MS = 350;
+// PlayMode advances on every note it hears the player actually pick: if the pitch is within
+// MATCH_CENTS_TOLERANCE of the target it's a hit, otherwise it's marked an error — but either
+// way the song moves on to the next note. The song never sits waiting.
+const MATCH_CENTS_TOLERANCE = 45; // a hit if within this of the target; wider than a tuner since a picked note's pitch bends on attack
 const MIN_CONFIDENCE = 0.45; // how "periodic" the signal must be — filters out noise/hum
 const MIN_RMS = 0.005; // just above mic self-noise — the confidence check (below) does the real noise rejection,
                         // and it's scale-invariant, so this floor can stay low without letting noise back in
 
-// How strongly the buffer must repeat at a *specific known* frequency (see correlationAtFreq)
-// for PlayMode to accept it as a match even when blind autoCorrelate can't find one confidently.
-// See PlayMode.targetedMatch for why this exists — the still-ringing previous note blends with
-// a freshly-played one enough that global autocorrelation locks onto neither cleanly, especially
-// on low strings which ring out the longest. Measured against a simulated ringing-note-transition
-// (old note decaying under a fresh pick attack): correlation at the true new-note frequency climbs
-// past this well before global autocorrelate's blended estimate gets anywhere near either note.
-const TARGET_CORR_CONFIDENCE = 0.5;
-
-// Repeated-note onset detection (see PlayMode.trackReattack): a pick-attack spike is an
-// RMS jump over the recent rolling minimum; the window length trades detection latency
-// against not being fooled by ordinary frame-to-frame jitter in a sustained ring.
-const REATTACK_HISTORY_LEN = 10; // ~150-200ms of frames
-const ONSET_RATIO = 1.6;         // new rms must exceed the recent floor by this factor
-const ONSET_ABS_MULT = 3;        // ...and clear an absolute floor, so near-silent jitter can't trigger it
+// Note-onset detection (PlayMode): a played note is registered once a confident pitch holds
+// steady for ONSET_CONFIRM_FRAMES; the same pitch then won't register again until either a
+// silence gap (REARM_SILENCE_FRAMES) or a fresh pick-attack — an RMS jump over the recent
+// rolling minimum by ONSET_RATIO that also clears an absolute floor.
+const ONSET_CONFIRM_FRAMES = 2;   // frames a steady pitch must persist before it counts as a played note
+const ONSET_STABLE_CENTS = 60;    // ...and it must stay within this of itself across those frames
+const SAME_NOTE_CENTS = 90;       // a sounding pitch within this of the last registered note = that note still ringing
+const REARM_SILENCE_FRAMES = 2;   // this many pitch-less frames re-arm for a new note at the same pitch
+const NOTE_COOLDOWN_MS = 90;      // minimum gap between two registered notes
+const RMS_HISTORY_LEN = 8;
+const ONSET_RATIO = 1.6;          // re-pick RMS must exceed the recent floor by this factor
+const ONSET_ABS_MULT = 3;         // ...and clear an absolute floor, so near-silent jitter can't trigger it
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
@@ -154,32 +150,6 @@ function autoCorrelate(buf, sampleRate) {
   const freq = sampleRate / T0;
   if (freq < 55 || freq > 1200) return -1; // outside guitar range, likely noise
   return freq;
-}
-
-// Unlike autoCorrelate (which searches the whole lag range for whatever period dominates),
-// this asks a narrower, more answerable question: "how strongly does the signal repeat at
-// the period for THIS specific known frequency?" — computed directly via the interpolated
-// autocorrelation value at that one lag, normalized by c[0] the same way autoCorrelate's
-// confidence is. Used by PlayMode to match against a known target frequency even when the
-// buffer is a blend of two notes (previous one still ringing under a freshly-played one) and
-// no single frequency dominates enough for autoCorrelate's global peak search to lock onto
-// either cleanly — see PlayMode.targetedMatch.
-function correlationAtFreq(buf, sampleRate, freq) {
-  const n = buf.length;
-  const lag = sampleRate / freq;
-  const lagFloor = Math.floor(lag);
-  if (lagFloor < 1 || lagFloor >= n - 1) return 0;
-  function corrAtLag(L) {
-    let sum = 0;
-    for (let j = 0; j < n - L; j++) sum += buf[j] * buf[j + L];
-    return sum;
-  }
-  const c0 = corrAtLag(0);
-  if (c0 <= 0) return 0;
-  const cLow = corrAtLag(lagFloor);
-  const cHigh = corrAtLag(lagFloor + 1);
-  const frac = lag - lagFloor;
-  return (cLow + (cHigh - cLow) * frac) / c0;
 }
 
 /* ---------------------------------------------------------------------- *
@@ -318,7 +288,7 @@ const Calibration = {
  * straight from whatever tunings actually appear in the song library (same
  * grouping as the menu's tuning filter), so "the different options" it can
  * tune to always matches what's playable. Live/ungated like Calibration —
- * no CONFIRM_FRAMES debounce, since a tuner should feel instantly responsive.
+ * no onset debounce, since a tuner should feel instantly responsive.
  * ---------------------------------------------------------------------- */
 
 const TUNER_CENTS_TOLERANCE = 8; // much tighter than gameplay's MATCH_CENTS_TOLERANCE — real tuning precision
@@ -479,7 +449,7 @@ const Tuner = {
  * SFX — small synthesized sounds, own AudioContext (independent of
  * PitchEngine's mic-analysis context so it works even pre-permission).
  *
- * PlayMode.correctHit uses `pluck(targetFreq)` as the hit sound, at the exact
+ * PlayMode.advance uses `pluck(targetFreq)` as the hit sound, at the exact
  * pitch of the note just played. That doubles as a lightweight "backing
  * track": there's no way to legally or technically play the actual studio
  * recording in sync with an arbitrary player's timing (no rights to it, and
@@ -726,22 +696,18 @@ const PlayMode = {
   songId: null,
   song: null,
   notes: [],
-  results: [], // null | 'correct' | 'wrong-first' (advanced after at least one miss)
+  results: [], // null | 'correct' | 'wrong'
   currentIndex: 0,
   wrongAttempts: 0,
 
-  matchCount: 0,
-  lastWrongNoteId: null,
-  wrongCandidateCount: 0,
   cooldownUntil: 0,
-  hadMissOnCurrent: false,
   listening: false,
 
-  // Repeated-note handling: when the current target is the same pitch as the note just
-  // played, its own decaying ring would otherwise re-satisfy the match instantly. Require
-  // either a silence gap or a fresh pick-attack (RMS spike over the recent ring) first.
-  reattackNeeded: false,
-  reattackSeen: false,
+  // Note-onset tracking (see onPitchFrame):
+  noteHeld: null,     // freq of the last registered note, while it's still sounding/ringing
+  pendingFreq: null,  // a candidate pitch waiting to hold steady for ONSET_CONFIRM_FRAMES
+  pendingFrames: 0,
+  quietFrames: 0,     // consecutive pitch-less frames
   rmsHistory: [],
 
   combo: 0,
@@ -754,16 +720,16 @@ const PlayMode = {
     this.results = new Array(this.notes.length).fill(null);
     this.currentIndex = 0;
     this.wrongAttempts = 0;
-    this.hadMissOnCurrent = false;
-    this.matchCount = 0;
-    this.lastWrongNoteId = null;
-    this.wrongCandidateCount = 0;
+    this.cooldownUntil = 0;
     this.listening = false;
+    this.noteHeld = null;
+    this.pendingFreq = null;
+    this.pendingFrames = 0;
+    this.quietFrames = 0;
     this.combo = 0;
     this.bestCombo = 0;
     this.updateCombo();
     this.rmsHistory = [];
-    this.updateReattackState();
 
     document.getElementById("play-song-name").textContent = `${song.title} — ${song.artist}`;
     document.getElementById("play-results").classList.add("hidden");
@@ -938,126 +904,78 @@ const PlayMode = {
       `${this.currentIndex} / ${this.notes.length} notes`;
   },
 
+  // Advances the song on every note the player actually picks. Each registered note is a hit
+  // if its pitch is within MATCH_CENTS_TOLERANCE of the target, otherwise it's marked an
+  // error — but either way we move to the next note, so the song never stalls.
   onPitchFrame(freq) {
     if (!this.listening || this.currentIndex >= this.notes.length) return;
 
-    this.trackReattack(freq, lastPitchDebug.rms);
-
+    const rms = lastPitchDebug.rms;
     const note = this.notes[this.currentIndex];
     const targetFreq = noteFrequency(note.string, note.fret, this.song.tuningOffsets);
 
     if (freq) this.setTuner(freq, centsBetween(freq, targetFreq));
     else this.setTuner(null, null);
 
+    // No confident pitch: count toward silence, which re-arms us to register the next note
+    // even if it's the same pitch as the one before.
+    if (!freq) {
+      this.pushRms(rms);
+      if (++this.quietFrames >= REARM_SILENCE_FRAMES) {
+        this.noteHeld = null;
+        this.pendingFreq = null;
+        this.pendingFrames = 0;
+      }
+      return;
+    }
+    this.quietFrames = 0;
+
+    // The last note we registered is still sounding — ignore its ring-out unless the player
+    // clearly re-picks (a fresh RMS attack over the decaying level).
+    if (this.noteHeld != null && Math.abs(centsBetween(freq, this.noteHeld)) < SAME_NOTE_CENTS) {
+      const spike = this.onsetSpike(rms);
+      this.pushRms(rms);
+      if (!spike) return;
+      this.noteHeld = null;
+    } else {
+      this.pushRms(rms);
+    }
+
+    // Wait for the pitch to hold steady for a beat so a one-frame detector glitch (octave
+    // jump, blip) can't count as a played note.
+    if (this.pendingFreq == null || Math.abs(centsBetween(freq, this.pendingFreq)) > ONSET_STABLE_CENTS) {
+      this.pendingFreq = freq;
+      this.pendingFrames = 1;
+      return;
+    }
+    this.pendingFreq = freq;
+    if (++this.pendingFrames < ONSET_CONFIRM_FRAMES) return;
+
     const now = performance.now();
     if (now < this.cooldownUntil) return;
 
-    const blindMatch = !!freq && Math.abs(centsBetween(freq, targetFreq)) <= MATCH_CENTS_TOLERANCE;
-    // If blind pitch detection didn't land on the target — often because the still-ringing
-    // previous note is blended into the same analysis window and dragged the global estimate
-    // off both notes — also ask directly whether the buffer shows strong evidence of the
-    // target's own frequency specifically. See targetedMatch / correlationAtFreq.
-    const matched = blindMatch || (!blindMatch && this.targetedMatch(targetFreq));
-
-    if (matched) {
-      if (this.reattackNeeded && !this.reattackSeen) {
-        // Right pitch, but so far it's indistinguishable from the previous identical
-        // note still ringing — wait for a silence gap or a fresh pick-attack spike.
-        return;
-      }
-      this.wrongCandidateCount = 0;
-      this.matchCount++;
-      if (this.matchCount >= CONFIRM_FRAMES) {
-        this.matchCount = 0;
-        this.cooldownUntil = now + CORRECT_COOLDOWN_MS;
-        this.correctHit();
-      }
-      return;
-    }
-
-    if (!freq) {
-      this.matchCount = 0;
-      this.wrongCandidateCount = 0;
-      this.lastWrongNoteId = null;
-      return;
-    }
-
-    if (this.isRecentBleed(freq)) {
-      // Likely the previous note (or the one before it) still ringing/decaying, not a
-      // wrong pick — ignore it: don't reset progress toward the current note, don't
-      // count it as a wrong attempt either.
-      return;
-    }
-
-    this.matchCount = 0;
-    const noteId = Math.round(69 + 12 * Math.log2(freq / 440));
-    if (noteId === this.lastWrongNoteId) {
-      this.wrongCandidateCount++;
-    } else {
-      this.lastWrongNoteId = noteId;
-      this.wrongCandidateCount = 1;
-    }
-    if (this.wrongCandidateCount >= WRONG_CONFIRM_FRAMES) {
-      this.wrongCandidateCount = 0;
-      this.cooldownUntil = now + WRONG_COOLDOWN_MS;
-      this.wrongAttempt();
-    }
+    // A picked note is confirmed — judge it and advance no matter what.
+    this.noteHeld = freq;
+    this.pendingFreq = null;
+    this.pendingFrames = 0;
+    this.cooldownUntil = now + NOTE_COOLDOWN_MS;
+    this.advance(Math.abs(centsBetween(freq, targetFreq)) <= MATCH_CENTS_TOLERANCE);
   },
 
-  // Directly tests "how strongly does the buffer repeat at the target's own frequency" rather
-  // than relying on blind autoCorrelate to pick it as the single global winner — see
-  // TARGET_CORR_CONFIDENCE and correlationAtFreq for why. Guards against accepting mere
-  // leftover ring from a recently-played note by requiring the target to clearly out-correlate
-  // any of the last couple of notes at their own frequencies (skipping ones that are the same
-  // pitch as the target, which reattack logic already handles separately).
-  targetedMatch(targetFreq) {
-    if (lastPitchDebug.rms < MIN_RMS) return false;
-    if (!PitchEngine.buffer || !PitchEngine.ctx) return false;
-    const sampleRate = PitchEngine.ctx.sampleRate;
-    const targetCorr = correlationAtFreq(PitchEngine.buffer, sampleRate, targetFreq);
-    if (targetCorr < TARGET_CORR_CONFIDENCE) return false;
-    for (const idx of [this.currentIndex - 1, this.currentIndex - 2]) {
-      if (idx < 0) continue;
-      const prev = this.notes[idx];
-      const prevFreq = noteFrequency(prev.string, prev.fret, this.song.tuningOffsets);
-      if (Math.abs(centsBetween(prevFreq, targetFreq)) <= MATCH_CENTS_TOLERANCE) continue;
-      const prevCorr = correlationAtFreq(PitchEngine.buffer, sampleRate, prevFreq);
-      if (prevCorr >= targetCorr) return false; // ambiguous — could just be the old note's tail
-    }
-    return true;
-  },
-
-  // True if `freq` matches one of the last couple of already-played notes rather than
-  // the current target — i.e. probably string ringing/decay bleeding into this frame.
-  isRecentBleed(freq) {
-    for (const idx of [this.currentIndex - 1, this.currentIndex - 2]) {
-      if (idx < 0) continue;
-      const prev = this.notes[idx];
-      const prevFreq = noteFrequency(prev.string, prev.fret, this.song.tuningOffsets);
-      if (Math.abs(centsBetween(freq, prevFreq)) <= MATCH_CENTS_TOLERANCE) return true;
-    }
-    return false;
-  },
-
-  // Feeds the rolling RMS window used to detect a fresh pick-attack, and flags
-  // reattackSeen the moment one shows up (a silence gap, or a level spike over the
-  // recently-decaying ring) — only matters while reattackNeeded is still unsatisfied.
-  trackReattack(freq, rms) {
-    if (this.reattackNeeded && !this.reattackSeen) {
-      if (!freq) {
-        this.reattackSeen = true; // a genuine gap between the two same-pitch notes
-        this.rmsHistory = [];
-        return;
-      }
-      if (this.rmsHistory.length >= REATTACK_HISTORY_LEN) {
-        const recentMin = Math.min(...this.rmsHistory);
-        if (rms > recentMin * ONSET_RATIO && rms > MIN_RMS * ONSET_ABS_MULT) {
-          this.reattackSeen = true;
-        }
-      }
-    }
+  pushRms(rms) {
     this.rmsHistory.push(rms);
-    if (this.rmsHistory.length > REATTACK_HISTORY_LEN) this.rmsHistory.shift();
+    if (this.rmsHistory.length > RMS_HISTORY_LEN) this.rmsHistory.shift();
+  },
+
+  // A fresh pick-attack while the previous note is still sounding: the level jumps well above
+  // the recent rolling minimum (its decaying ring) and clears an absolute floor. Only meaningful
+  // when that recent floor is an actual ring, not silence — a note starting after a gap is
+  // handled by the silence re-arm instead.
+  onsetSpike(rms) {
+    if (this.rmsHistory.length < RMS_HISTORY_LEN) return false;
+    const recentMin = Math.min(...this.rmsHistory);
+    if (recentMin < MIN_RMS * 1.5) return false;
+    return rms > recentMin * ONSET_RATIO && rms > MIN_RMS * ONSET_ABS_MULT;
   },
 
   setTuner(freq, cents) {
@@ -1076,25 +994,32 @@ const PlayMode = {
     readout.textContent = `${freqToNoteName(freq)} · ${freq.toFixed(1)} Hz · ${cents > 0 ? "+" : ""}${cents.toFixed(0)}¢`;
   },
 
-  correctHit() {
+  advance(correct) {
     const chip = this.chipEls[this.currentIndex];
-    chip.classList.add("match-flash");
-    const justPlayed = this.notes[this.currentIndex];
-    SFX.pluck(noteFrequency(justPlayed.string, justPlayed.fret, this.song.tuningOffsets));
-    this.results[this.currentIndex] = this.hadMissOnCurrent ? "wrong-first" : "correct";
-    if (!this.hadMissOnCurrent) {
+    const played = this.notes[this.currentIndex];
+    if (correct) {
+      chip.classList.add("match-flash");
+      SFX.pluck(noteFrequency(played.string, played.fret, this.song.tuningOffsets));
+      this.results[this.currentIndex] = "correct";
       this.combo++;
       this.bestCombo = Math.max(this.bestCombo, this.combo);
     } else {
+      this.results[this.currentIndex] = "wrong";
+      this.wrongAttempts++;
       this.combo = 0;
+      SFX.miss();
+      chip.style.boxShadow = "0 0 0 4px rgba(241, 94, 108, 0.7)";
+      setTimeout(() => { chip.style.boxShadow = ""; }, 220);
+      const track = document.getElementById("track-container");
+      track.classList.remove("shake");
+      void track.offsetWidth;
+      track.classList.add("shake");
     }
     this.updateCombo();
-    this.hadMissOnCurrent = false;
     this.currentIndex++;
+    this.rmsHistory = [];
     this.updateProgress();
     this.updateTrackTransform();
-    this.rmsHistory = [];
-    this.updateReattackState();
 
     if (this.currentIndex >= this.notes.length) {
       this.finish();
@@ -1113,35 +1038,6 @@ const PlayMode = {
     } else {
       badge.classList.add("hidden");
     }
-  },
-
-  // Call whenever currentIndex changes: decides whether the new target note needs a
-  // fresh pick-attack (it's the same pitch as the note that was just played).
-  updateReattackState() {
-    const prev = this.notes[this.currentIndex - 1];
-    const note = this.notes[this.currentIndex];
-    this.reattackNeeded =
-      !!prev && !!note &&
-      Math.abs(centsBetween(
-        noteFrequency(note.string, note.fret, this.song.tuningOffsets),
-        noteFrequency(prev.string, prev.fret, this.song.tuningOffsets)
-      )) <= MATCH_CENTS_TOLERANCE;
-    this.reattackSeen = !this.reattackNeeded;
-  },
-
-  wrongAttempt() {
-    this.wrongAttempts++;
-    this.hadMissOnCurrent = true;
-    this.combo = 0;
-    this.updateCombo();
-    SFX.miss();
-    const chip = this.chipEls[this.currentIndex];
-    chip.style.boxShadow = "0 0 0 4px rgba(241, 94, 108, 0.7)";
-    setTimeout(() => { chip.style.boxShadow = ""; }, 220);
-    const track = document.getElementById("track-container");
-    track.classList.remove("shake");
-    void track.offsetWidth;
-    track.classList.add("shake");
   },
 
   finish() {

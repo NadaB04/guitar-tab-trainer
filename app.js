@@ -24,18 +24,12 @@ const MIN_NOTE_GAP = 55;   // floor so fast passages don't visually collide
 const MIN_TAIL_WIDTH = 10; // stays visible even for very short/staccato notes
 const MAX_TAIL_WIDTH = 220; // cap so a long held final note doesn't dominate the strip
 
-// Matching is deliberately loose — the goal is for a note you clearly played to register
-// immediately and never leave the song "stuck" waiting. Correctness is confirmed fast and
-// forgivingly; a *wrong* note is confirmed slowly and reluctantly.
-const MATCH_CENTS_TOLERANCE = 55;  // ~half a semitone either way — rides out pick-attack pitch wobble and a slightly-off tuning
-const CONFIRM_FRAMES = 2;          // just enough to reject a single-frame detector blip
-const CONFIRM_LOST_GRACE = 6;      // matching-frame streak survives this many non-matching frames before it resets
-const WRONG_CONFIRM_FRAMES = 26;   // ~450ms of a *stable* wrong pitch before it's called a miss
-const CORRECT_COOLDOWN_MS = 80;    // shorter than a 16th note at ~150bpm, so fast runs don't jam
-const WRONG_COOLDOWN_MS = 250;
-const REATTACK_TIMEOUT_MS = 130;   // a repeated same-pitch note auto-allows itself this long after the previous hit (a re-pick that late is deliberate)
-const STALL_BREAK_FRAMES = 20;     // ~330ms of sustained correct-pitch evidence force-advances even if the strict match path is jammed
-const MIN_CONFIDENCE = 0.38; // how "periodic" the signal must be — filters out noise/hum
+const MATCH_CENTS_TOLERANCE = 35;
+const CONFIRM_FRAMES = 8;        // ~130ms of a stable correct pitch before it counts
+const WRONG_CONFIRM_FRAMES = 18; // ~300ms of a stable wrong pitch — rides out pick-attack noise
+const CORRECT_COOLDOWN_MS = 280;
+const WRONG_COOLDOWN_MS = 350;
+const MIN_CONFIDENCE = 0.45; // how "periodic" the signal must be — filters out noise/hum
 const MIN_RMS = 0.005; // just above mic self-noise — the confidence check (below) does the real noise rejection,
                         // and it's scale-invariant, so this floor can stay low without letting noise back in
 
@@ -46,14 +40,14 @@ const MIN_RMS = 0.005; // just above mic self-noise — the confidence check (be
 // on low strings which ring out the longest. Measured against a simulated ringing-note-transition
 // (old note decaying under a fresh pick attack): correlation at the true new-note frequency climbs
 // past this well before global autocorrelate's blended estimate gets anywhere near either note.
-const TARGET_CORR_CONFIDENCE = 0.55;
+const TARGET_CORR_CONFIDENCE = 0.5;
 
 // Repeated-note onset detection (see PlayMode.trackReattack): a pick-attack spike is an
 // RMS jump over the recent rolling minimum; the window length trades detection latency
 // against not being fooled by ordinary frame-to-frame jitter in a sustained ring.
-const REATTACK_HISTORY_LEN = 6; // ~100ms of frames
-const ONSET_RATIO = 1.25;       // new rms must exceed the recent floor by this factor (small — most re-picks are gentle)
-const ONSET_ABS_MULT = 3;       // ...and clear an absolute floor, so near-silent jitter can't trigger it
+const REATTACK_HISTORY_LEN = 10; // ~150-200ms of frames
+const ONSET_RATIO = 1.6;         // new rms must exceed the recent floor by this factor
+const ONSET_ABS_MULT = 3;        // ...and clear an absolute floor, so near-silent jitter can't trigger it
 
 const NOTE_NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
 
@@ -737,9 +731,6 @@ const PlayMode = {
   wrongAttempts: 0,
 
   matchCount: 0,
-  lostFrames: 0,     // consecutive non-matching frames since the match streak was last advanced
-  evidenceFrames: 0, // frames of loose "target pitch is clearly in the sound" evidence — feeds the stall-breaker
-  lastHitAt: 0,      // performance.now() of the last correctHit — feeds the reattack timeout
   lastWrongNoteId: null,
   wrongCandidateCount: 0,
   cooldownUntil: 0,
@@ -765,10 +756,6 @@ const PlayMode = {
     this.wrongAttempts = 0;
     this.hadMissOnCurrent = false;
     this.matchCount = 0;
-    this.lostFrames = 0;
-    this.evidenceFrames = 0;
-    this.lastHitAt = 0;
-    this.cooldownUntil = 0;
     this.lastWrongNoteId = null;
     this.wrongCandidateCount = 0;
     this.listening = false;
@@ -966,42 +953,19 @@ const PlayMode = {
     if (now < this.cooldownUntil) return;
 
     const blindMatch = !!freq && Math.abs(centsBetween(freq, targetFreq)) <= MATCH_CENTS_TOLERANCE;
-    // When blind autoCorrelate returns a *confident* frequency that is clearly not the target
-    // (and isn't just a previous note ringing through), believe it — the player is on a wrong
-    // note, and the correlation-based fallbacks below must not overrule that. correlationAtFreq
-    // can't tell a semitone apart on its own, so it only gets a say when the blind detector has
-    // nothing confident to offer (a null read, or a blended two-note window).
-    const blindSaysWrong = !!freq && !blindMatch && !this.isRecentBleed(freq);
-    // Fallback for the blended-notes case: ask directly whether the buffer repeats at the
-    // target's own frequency. See targetedMatch / correlationAtFreq.
-    const matched = blindMatch || (!blindSaysWrong && this.targetedMatch(targetFreq));
-
-    // Stall-breaker: if the correct pitch has clearly been in the sound for a while but the
-    // strict path above still hasn't advanced (two notes blended at similar volume, a messy
-    // sustain, an odd mic chain), stop fighting the player and take it. Needs sustained
-    // evidence of the *target* pitch specifically, so it can't false-advance on a wrong note.
-    const looseEvidence = !blindSaysWrong && (
-      (!!freq && Math.abs(centsBetween(freq, targetFreq)) <= MATCH_CENTS_TOLERANCE * 1.2) ||
-      (lastPitchDebug.rms >= MIN_RMS && PitchEngine.buffer && PitchEngine.ctx &&
-        correlationAtFreq(PitchEngine.buffer, PitchEngine.ctx.sampleRate, targetFreq) >= 0.45));
-    this.evidenceFrames = looseEvidence ? this.evidenceFrames + 1 : Math.max(0, this.evidenceFrames - 1);
-    if (this.evidenceFrames >= STALL_BREAK_FRAMES && this.wrongCandidateCount < 3) {
-      this.matchCount = 0;
-      this.evidenceFrames = 0;
-      this.cooldownUntil = now + CORRECT_COOLDOWN_MS;
-      this.correctHit();
-      return;
-    }
+    // If blind pitch detection didn't land on the target — often because the still-ringing
+    // previous note is blended into the same analysis window and dragged the global estimate
+    // off both notes — also ask directly whether the buffer shows strong evidence of the
+    // target's own frequency specifically. See targetedMatch / correlationAtFreq.
+    const matched = blindMatch || (!blindMatch && this.targetedMatch(targetFreq));
 
     if (matched) {
-      // Repeated same-pitch note: normally wait for a fresh pick-attack so the previous
-      // note's own ring can't auto-advance this one — but if enough time has passed since
-      // the last hit, a still-correct pitch is a deliberate re-pick, so just take it.
-      if (this.reattackNeeded && !this.reattackSeen && now - this.lastHitAt < REATTACK_TIMEOUT_MS) {
+      if (this.reattackNeeded && !this.reattackSeen) {
+        // Right pitch, but so far it's indistinguishable from the previous identical
+        // note still ringing — wait for a silence gap or a fresh pick-attack spike.
         return;
       }
       this.wrongCandidateCount = 0;
-      this.lostFrames = 0;
       this.matchCount++;
       if (this.matchCount >= CONFIRM_FRAMES) {
         this.matchCount = 0;
@@ -1011,14 +975,8 @@ const PlayMode = {
       return;
     }
 
-    // Not a match this frame. Don't throw away an in-progress match streak over a brief
-    // detector blip (a dropped frame, a flicker to a wrong octave) — only reset once the
-    // signal has been non-matching for several frames in a row.
-    this.lostFrames++;
-    if (this.matchCount > 0 && this.lostFrames <= CONFIRM_LOST_GRACE) return;
-    this.matchCount = 0;
-
     if (!freq) {
+      this.matchCount = 0;
       this.wrongCandidateCount = 0;
       this.lastWrongNoteId = null;
       return;
@@ -1031,6 +989,7 @@ const PlayMode = {
       return;
     }
 
+    this.matchCount = 0;
     const noteId = Math.round(69 + 12 * Math.log2(freq / 440));
     if (noteId === this.lastWrongNoteId) {
       this.wrongCandidateCount++;
@@ -1057,13 +1016,6 @@ const PlayMode = {
     const sampleRate = PitchEngine.ctx.sampleRate;
     const targetCorr = correlationAtFreq(PitchEngine.buffer, sampleRate, targetFreq);
     if (targetCorr < TARGET_CORR_CONFIDENCE) return false;
-    // correlationAtFreq barely changes across a semitone, so a note played up to ~a semitone
-    // off still scores high at the target. Require the target to be a genuine local peak — it
-    // must out-correlate the pitches a semitone above and below it; if the player is really
-    // that sharp or flat, one of those neighbours wins and this rightly fails.
-    const semi = Math.pow(2, 1 / 12);
-    if (correlationAtFreq(PitchEngine.buffer, sampleRate, targetFreq * semi) > targetCorr) return false;
-    if (correlationAtFreq(PitchEngine.buffer, sampleRate, targetFreq / semi) > targetCorr) return false;
     for (const idx of [this.currentIndex - 1, this.currentIndex - 2]) {
       if (idx < 0) continue;
       const prev = this.notes[idx];
@@ -1139,10 +1091,6 @@ const PlayMode = {
     this.updateCombo();
     this.hadMissOnCurrent = false;
     this.currentIndex++;
-    this.lastHitAt = performance.now();
-    this.matchCount = 0;
-    this.lostFrames = 0;
-    this.evidenceFrames = 0;
     this.updateProgress();
     this.updateTrackTransform();
     this.rmsHistory = [];

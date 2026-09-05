@@ -121,22 +121,35 @@ pass had a confirmed wrong note.
   how periodic the signal is — this is what actually distinguishes a real note from noise, and is
   amplitude-invariant, so it works the same at low or high gain). Populates
   `lastPitchDebug = {rms, confidence}` every call for on-screen diagnostics.
+- `correlationAtFreq(buf, sampleRate, freq)` — the non-blind counterpart: instead of asking "what's
+  the one best-fitting frequency in this buffer," asks "how strongly does this buffer repeat at
+  *this specific known* frequency's period" (interpolated autocorrelation value at that one lag,
+  normalized by `c[0]` the same way). Exists because when a new note is played while the previous
+  one is still ringing (low strings sustain the longest, so this hits them hardest), the buffer is
+  a blend of both and `autoCorrelate`'s global search locks onto neither cleanly — it settles on a
+  blended, wrong frequency that satisfies no real note. Since gameplay always knows the exact
+  target frequency in advance, `PlayMode.targetedMatch` uses this to sidestep that failure mode
+  entirely — see below.
 - `Calibration` — ungated, continuous "here's what I currently hear" readout (note name, Hz,
   clarity, level) shown before practice starts, so it's obvious whether the pipeline hears
   anything at all vs. hears it but rejects it. Exists specifically because mic/interface signal
   chains vary wildly and blind threshold-tuning wasn't working — see "Known tuning constants" below.
-- `PlayMode` — practice state machine. **The model is simple by explicit user demand: every note
-  the player actually picks advances the song by one — a hit if its pitch is within
-  `MATCH_CENTS_TOLERANCE` of the target, otherwise marked an error (`results[i] = 'wrong'`) — but
-  it advances either way, so the song never sits stuck waiting to "get" a note.** `onPitchFrame`
-  segments the audio into played notes: a confident `autoCorrelate` pitch that holds within
-  `ONSET_STABLE_CENTS` for `ONSET_CONFIRM_FRAMES` is one note event, then `advance()` judges it
-  and moves on. The just-registered pitch is stored in `noteHeld` and its ring-out is ignored
-  until either `REARM_SILENCE_FRAMES` of no pitch, or `onsetSpike()` sees a fresh pick-attack
-  (RMS jump over the recent rolling min, and only when that min is a real ring, not silence).
-  `NOTE_COOLDOWN_MS` is the floor between two registrations. No `correlationAtFreq`, no
-  multi-frame "confirm the wrong note", no reattack state machine — those were removed; if
-  tempted to add discrimination cleverness back, re-read the user feedback memory first. Renders the
+- `PlayMode` — practice state machine. `onPitchFrame` compares detected pitch (in cents, via
+  `centsBetween`) against the current target note's frequency (`noteFrequency(string, fret)`).
+  A frame counts as a match if *either* the blind `autoCorrelate` result lands in tolerance, *or*
+  `targetedMatch` does: it calls `correlationAtFreq` directly against the target's own frequency
+  (skipped when the blind check already passed — it's a fallback, not run every frame) and accepts
+  if that correlation clears `TARGET_CORR_CONFIDENCE` *and* clearly beats the correlation at any of
+  the last couple of played notes' own frequencies (guards against accepting mere leftover ring
+  from a note that hasn't finished decaying). Requires `CONFIRM_FRAMES` consecutive matching frames
+  to advance (fast) or `WRONG_CONFIRM_FRAMES` consecutive out-of-tolerance *blind* frames to log a
+  miss (slower, to ride out pick-attack transient noise — "wrong" detection has no known target to
+  check against, so it can't use the targeted path), each followed by a short cooldown. A frame
+  that doesn't match the current target but does match one of the previous 1-2 notes
+  (`isRecentBleed`) is treated as neutral ring-through, not a miss. When the next target note is
+  the same pitch as the one just played, `reattackNeeded`/`trackReattack` block it from re-matching
+  on the previous note's own decaying ring — it needs either a silence gap or an RMS onset spike
+  first. Renders the
   horizontal scrolling tab (`buildTrackStrip`/`updateTrackTransform`): all notes are real DOM
   elements (diamond "gem" chips, each with a "sustain tail" bar behind it) laid out left-to-right
   via `computeNotePositions()`, which places each chip by its real `time` field (seconds) ×
@@ -166,11 +179,11 @@ pass had a confirmed wrong note.
 - `Tuner` — standalone chromatic-per-string tuner (`tuner` screen). Its tuning picker
   (`buildTunings`) is derived from whatever tunings actually appear in `SONGS` (same grouping as
   the menu's tuning filter, so the two always stay in sync automatically) — not a separate
-  hardcoded list. Live/ungated like `Calibration`, no onset debounce. Auto-detects which
+  hardcoded list. Live/ungated like `Calibration`, no `CONFIRM_FRAMES` debounce. Auto-detects which
   of the 6 open strings the incoming pitch is nearest to in cents (`onFrame`), or locks to a
   specific string if the player clicks one (`lockedString`) — useful when a wildly out-of-tune
   string would otherwise auto-target the wrong one. Uses its own tighter `TUNER_CENTS_TOLERANCE`
-  (±8¢) than gameplay's `MATCH_CENTS_TOLERANCE` (±45¢), since a tuner needs real tuning precision
+  (±8¢) than gameplay's `MATCH_CENTS_TOLERANCE` (±35¢), since a tuner needs real tuning precision
   while gameplay is deliberately lenient.
 
 **Mic session persistence:** `PlayMode.stop()`/`Tuner.stop()` (called by `Screens.show` on any
@@ -191,29 +204,23 @@ session with no real guitar/mic attached, verification relies on constructing a 
 tone) or a noise `AudioBufferSourceNode`, then calling `PitchEngine.start(fakeStream)` directly
 (bypassing the real `getUserMedia` permission prompt) to exercise the whole detection pipeline.
 Note: `requestAnimationFrame` is heavily throttled in a backgrounded/automated tab — don't trust
-short waits; either wait several seconds or drive the loop manually. When driving `onPitchFrame`
-directly in a test, do what `_loop` does — `autoCorrelate` returns `-1` on failure and `_loop`
-passes `freq > 0 ? freq : null`, so feed `onPitchFrame` the `null`, never a raw `-1`. Reset
-`PlayMode.cooldownUntil = 0` if you mock `performance.now` to a fixed clock. Good stress matrix:
-all-notes-correct (expect every one a hit, ~60ms each); a wrong note each time (expect exactly
-one advance per note, marked `'wrong'`, nothing stuck); one correct note held 2s straight (expect
-exactly one advance); a note's long ring-out with no re-pick (expect zero extra advances); a run
-of identical target notes played with legato re-picks (expect each re-pick to advance).
+short waits; either wait several seconds or drive `PitchEngine._loop()` / `autoCorrelate()`
+manually in a loop when checking results programmatically.
 
 ## Known tuning constants (top of `app.js`)
 
-`MATCH_CENTS_TOLERANCE`, `MIN_RMS`, `MIN_CONFIDENCE`, `ONSET_CONFIRM_FRAMES`, `ONSET_STABLE_CENTS`,
-`SAME_NOTE_CENTS`, `REARM_SILENCE_FRAMES`, `NOTE_COOLDOWN_MS`, `RMS_HISTORY_LEN`, `ONSET_RATIO`,
-`ONSET_ABS_MULT`, `DEFAULT_INPUT_GAIN`, `TUNER_CENTS_TOLERANCE`.
-
-**The user's standing, repeated instruction: detection must never make the song feel stuck.**
-The current design answers that by advancing on every played note regardless of right/wrong (see
-`PlayMode` above). Earlier attempts tried to be smart about "is this really the right note / a
-real re-pick / just ring-through" (`CONFIRM_FRAMES`, `WRONG_CONFIRM_FRAMES`, `correlationAtFreq`,
-`targetedMatch`, `reattackNeeded`) and every version of that got the same complaint. Don't
-reintroduce it. If asked to change detection, stay in the "simpler / looser" direction.
-
-When the user reports a specific problem: (1) ask what the calibration/tuner readout shows (right
-note/Hz? nothing? unstable?) to separate a device/routing issue from logic; (2) build the
-synthetic repro and drive `onPitchFrame` (see "Testing without hardware"); (3) `fftSize` is 4096
-for low-string confidence — dropping it cuts latency but hurts detection on the low strings.
+`MIN_RMS`, `MIN_CONFIDENCE`, `MATCH_CENTS_TOLERANCE`, `CONFIRM_FRAMES`, `WRONG_CONFIRM_FRAMES`,
+`*_COOLDOWN_MS`, `DEFAULT_INPUT_GAIN`, `TARGET_CORR_CONFIDENCE`, `TUNER_CENTS_TOLERANCE`. This
+environment still has no real mic access itself, but the user now has and has reported two real
+detection problems against actual playing, both diagnosed and fixed the same way — worth repeating
+for the next one: (1) get the user to describe what the calibration/tuner readout actually shows
+(right note/Hz but not advancing? nothing shows up at all? unstable/wrong?) to tell a
+device/routing issue from a detection-logic issue; (2) build a synthetic repro of the *specific*
+scenario in the browser (a fake `MediaStream` from an oscillator, or by directly constructing a
+`Float32Array` buffer and calling `autoCorrelate`/`correlationAtFreq` on it — see "Testing without
+hardware" above) rather than tweaking constants blind; (3) fix the underlying detection logic, not
+just retune a threshold — both real fixes so far were algorithm changes, not constant nudges:
+widening `fftSize` 2048→4096 fixed low-string confidence but made note-to-note transitions worse
+(the previous note's ring blends into the new one's analysis window for longer), which then needed
+`correlationAtFreq`/`targetedMatch` to fix in turn. A constant-only fix is liable to trade one of
+these problems for the other.

@@ -69,25 +69,33 @@ is the first rebuilt from a **MIDI transcription**, which is now the preferred m
 noticeably more like the record because you can take the melody/lead line's actual pitches and
 rhythm instead of a rhythm-guitar-only cover that reads as generic backing music.
 
-**MIDI-transcription workflow** (use this when rebuilding a song):
-1. Find a multitrack `.mid` (bitmidi.com `uploads/<id>.mid`, or search "<song> midi"). Prefer one
-   in the **original key** — many are transposed; check a known riff note against the recording.
-2. Parse with `@tonejs/midi` (install in a scratch dir, not the repo). List tracks: name,
-   instrument, note count, pitch range. Named tracks ("Guitar 1 (Jack White)", "Solo Guitar", …)
-   or a lone "sax"/"flute" track standing in for an absent vocal tell you which line is the hook.
-3. Reduce to monophonic: group near-simultaneous notes (onset within ~40ms) and take the **top**
-   note (melody) — power-chord tracks otherwise give you the root, not the tune.
-4. Build the arrangement as a real song structure (intro/verse/chorus/solo/outro), condensing
-   repeats (3–4 riff cycles per verse, not 15). Include the **solo / lead melodic peak** — that's
-   what makes it recognizable and is the most fun to play.
-5. Octave-shift into playable guitar range (the SNA riff's low B1 is below the guitar; it's
-   played an octave up — the record's sub-octave is a Whammy pedal). Map pitches to string/fret
-   keeping the hand in one position per section.
-6. Generate the JSON with a throwaway Node script (`push(string,fret,dur)` + a running `time`
-   cursor; scale MIDI seconds by `midiBpm/songBpm` if tempos differ). Scripts aren't checked in —
-   only the JSON output. `seven-nation-army`'s generator is in the session scratchpad as a model.
-7. Verify in-browser: load the song, check note count / `freqToNoteName` of the first bars and
-   the solo, screenshot the play surface.
+**MIDI-transcription workflow** (use this when rebuilding a song). The goal the user cares about:
+play the **melody line the listener hums** (the vocal, or a piano arrangement's right hand —
+*not* the rhythm-guitar part), so it sounds like the record instead of generic backing music.
+`seven-nation-army.json` is built this way — study it as the model.
+1. Find a multitrack `.mid` (bitmidi.com `uploads/<id>.mid` — the id is in the page HTML; search
+   "<song> midi" / "<song> piano midi"). Prefer one in the **original key** — many are transposed;
+   check a known note against the recording and shift all pitches by the interval if needed
+   (SNA's file was up a perfect 5th → −7 semitones).
+2. Parse with `@tonejs/midi` (install in a scratch dir, not the repo). List every track: name,
+   instrument, note count, pitch range. The melody is usually a lone monophonic track named for a
+   wind instrument ("tenor sax", "flute", "recorder") standing in for the absent vocal, or a
+   piano/lead track. Rhythm-guitar and "pad"/"strings" tracks are accompaniment — skip them.
+3. Use MIDI **ticks** for timing, not seconds — `note.ticks / header.ppq` = beats, independent of
+   the file's (often wobbly, multi-tempo) tempo map. Quantise beats + durations to a 1/16 grid,
+   merge same-pitch stutter, then re-emit at the real song BPM (`beat * 60 / bpm`).
+4. Reduce to monophonic if the chosen track has chords: group near-simultaneous notes (onset
+   within ~40ms) and take the **top** note.
+5. Build the arrangement as a real song structure. Play the melody through the verses/choruses/
+   bridge; drop the **riff** into the intro, the long instrumental gaps (fill any melody rest ≥ ~3
+   beats), and the outro; include the **solo** if the MIDI has a clean one. Condense long repeats.
+6. Octave-shift into playable guitar range and map pitches to string/fret keeping the hand in one
+   position per section (melody in E3–B3 sits on the D/G strings; the SNA riff's low B is below
+   the guitar so it's played an octave up — the record's sub-octave is a Whammy pedal).
+7. Generate the JSON with a throwaway Node script that reads the `.mid` directly (see gen2.js in
+   the session scratchpad as a model). Scripts aren't checked in — only the JSON output.
+8. Verify in-browser: load the song, check note count and `freqToNoteName` of the melody/riff/
+   solo sections, screenshot the play surface.
 
 Older tab-text approach (still fine for short riff excerpts): Ultimate Guitar's tab text isn't in
 the WebFetch-rendered page — `curl` the raw HTML and pull it from the `id="js-store"` element's

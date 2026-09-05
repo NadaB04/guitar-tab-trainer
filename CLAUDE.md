@@ -210,17 +210,28 @@ manually in a loop when checking results programmatically.
 ## Known tuning constants (top of `app.js`)
 
 `MIN_RMS`, `MIN_CONFIDENCE`, `MATCH_CENTS_TOLERANCE`, `CONFIRM_FRAMES`, `WRONG_CONFIRM_FRAMES`,
-`*_COOLDOWN_MS`, `DEFAULT_INPUT_GAIN`, `TARGET_CORR_CONFIDENCE`, `TUNER_CENTS_TOLERANCE`. This
-environment still has no real mic access itself, but the user now has and has reported two real
-detection problems against actual playing, both diagnosed and fixed the same way — worth repeating
-for the next one: (1) get the user to describe what the calibration/tuner readout actually shows
-(right note/Hz but not advancing? nothing shows up at all? unstable/wrong?) to tell a
-device/routing issue from a detection-logic issue; (2) build a synthetic repro of the *specific*
-scenario in the browser (a fake `MediaStream` from an oscillator, or by directly constructing a
-`Float32Array` buffer and calling `autoCorrelate`/`correlationAtFreq` on it — see "Testing without
-hardware" above) rather than tweaking constants blind; (3) fix the underlying detection logic, not
-just retune a threshold — both real fixes so far were algorithm changes, not constant nudges:
-widening `fftSize` 2048→4096 fixed low-string confidence but made note-to-note transitions worse
-(the previous note's ring blends into the new one's analysis window for longer), which then needed
-`correlationAtFreq`/`targetedMatch` to fix in turn. A constant-only fix is liable to trade one of
-these problems for the other.
+`*_COOLDOWN_MS`, `DEFAULT_INPUT_GAIN`, `TARGET_CORR_CONFIDENCE`, `TUNER_CENTS_TOLERANCE`.
+
+This environment has no real mic. When the user reports a detection problem: (1) ask what the
+calibration/tuner readout actually shows (right note/Hz but not advancing? nothing at all?
+unstable/wrong note?) — that separates a device/routing issue from detection logic; (2) build a
+synthetic repro of that *specific* scenario (fake `MediaStream` from an oscillator, or hand-build a
+`Float32Array` and call `autoCorrelate` on it — see "Testing without hardware") before touching
+anything; (3) prefer an algorithm fix over nudging a constant (e.g. `fftSize` 2048→4096 for
+low-string confidence, then `correlationAtFreq`/`targetedMatch` for the note-transition blends that
+change introduced).
+
+## Open issue — detection picks a neighbouring note (do not keep reworking blindly)
+
+The user's setup is an **acoustic/electric guitar into the laptop's built-in mic**. In that
+signal the fundamental is weak and the harmonics are strong, so `autoCorrelate` often locks onto a
+neighbouring pitch (a harmonic, or a blend) rather than the note played — the user has to play very
+precisely to advance. This is a known, deferred TODO; the user explicitly asked that it be left
+alone for now, **not** patched with more match-logic tweaks.
+
+Three attempts this project's history to make matching more forgiving / smarter (looser constants;
+an "any onset advances, right or wrong" model; the `correlationAtFreq`+`reattack` apparatus) were
+all rejected and reverted — detection is currently at its long-standing baseline. When this is
+picked up again, the fix belongs in the **pitch detector for weak-fundamental input** (harmonic-
+product-spectrum, a sub-harmonic sanity check, or biasing toward the lower candidate lag), verified
+against a synthetic buffer with a weak fundamental + strong 2nd/3rd harmonics — not in `PlayMode`.

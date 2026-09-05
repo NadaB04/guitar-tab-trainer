@@ -61,26 +61,39 @@ prior pass (before this verification habit existed) had at least one confirmed w
 to be fixed later — don't assume old song files are correct without spot-checking if something
 sounds off.
 
-**Song data is currently a mix of two states**, not yet consistent across the library: most songs
-(8–28 notes) are still a short excerpt of just the main riff, while a handful —
-`smoke-on-the-water`, `back-in-black`, `the-diary-of-jane`, `seven-nation-army`,
-`animal-i-have-become` (72–215 notes) — have been rebuilt to cover the real song's full structure
-(intro/verse/chorus/bridge/outro), not just a looped riff. When asked to do this for another song,
-match the fuller songs' approach, not the short ones': pull real structural sections from actual
-tab data rather than just repeating one riff snippet, but stay honest to what the recording
-actually does — e.g. `seven-nation-army`'s verse genuinely is just the riff continuing under the
-vocal (confirmed against a piano transcription's bass part), so it repeats the riff there on
-purpose; the fix in a case like that is arrangement (real transitions, a real distinct bridge
-section) and phrasing, not inventing pitches that aren't in the recording. Ultimate Guitar's tab
-text is not present in the rendered page WebFetch sees (it's client-rendered) — fetch the raw HTML
-with `curl` instead and pull the tab text out of the `id="js-store"` element's `data-content`
-attribute (HTML-entity-decode, then `JSON.parse`; the text lives at
-`store.page.data.tab_view.wiki_tab.content`). Generate the final note timing arithmetic with a
-small throwaway Node script (build a `notes` array via `push(string, fret, duration)`/`gap(seconds)`
-helpers that track a running `time` cursor, `JSON.stringify` the result) rather than hand-typing
-times — much less error-prone for anything beyond a handful of notes. These generator scripts
-aren't checked in anywhere (only their JSON output is committed) — there's no existing one to copy,
-write a fresh one per song.
+**Song data is currently a mix of states**, not yet consistent across the library: most songs
+(8–28 notes) are still a short excerpt of just the main riff; a few (`smoke-on-the-water`,
+`back-in-black`, `the-diary-of-jane`, `animal-i-have-become`, 72–215 notes) were rebuilt from
+tab text to cover the full structure but as a straight guitar-cover line; and `seven-nation-army`
+is the first rebuilt from a **MIDI transcription**, which is now the preferred method — it sounds
+noticeably more like the record because you can take the melody/lead line's actual pitches and
+rhythm instead of a rhythm-guitar-only cover that reads as generic backing music.
+
+**MIDI-transcription workflow** (use this when rebuilding a song):
+1. Find a multitrack `.mid` (bitmidi.com `uploads/<id>.mid`, or search "<song> midi"). Prefer one
+   in the **original key** — many are transposed; check a known riff note against the recording.
+2. Parse with `@tonejs/midi` (install in a scratch dir, not the repo). List tracks: name,
+   instrument, note count, pitch range. Named tracks ("Guitar 1 (Jack White)", "Solo Guitar", …)
+   or a lone "sax"/"flute" track standing in for an absent vocal tell you which line is the hook.
+3. Reduce to monophonic: group near-simultaneous notes (onset within ~40ms) and take the **top**
+   note (melody) — power-chord tracks otherwise give you the root, not the tune.
+4. Build the arrangement as a real song structure (intro/verse/chorus/solo/outro), condensing
+   repeats (3–4 riff cycles per verse, not 15). Include the **solo / lead melodic peak** — that's
+   what makes it recognizable and is the most fun to play.
+5. Octave-shift into playable guitar range (the SNA riff's low B1 is below the guitar; it's
+   played an octave up — the record's sub-octave is a Whammy pedal). Map pitches to string/fret
+   keeping the hand in one position per section.
+6. Generate the JSON with a throwaway Node script (`push(string,fret,dur)` + a running `time`
+   cursor; scale MIDI seconds by `midiBpm/songBpm` if tempos differ). Scripts aren't checked in —
+   only the JSON output. `seven-nation-army`'s generator is in the session scratchpad as a model.
+7. Verify in-browser: load the song, check note count / `freqToNoteName` of the first bars and
+   the solo, screenshot the play surface.
+
+Older tab-text approach (still fine for short riff excerpts): Ultimate Guitar's tab text isn't in
+the WebFetch-rendered page — `curl` the raw HTML and pull it from the `id="js-store"` element's
+`data-content` attribute (HTML-entity-decode, then `JSON.parse`; text at
+`store.page.data.tab_view.wiki_tab.content`). Cross-check pitches against a second source; a prior
+pass had a confirmed wrong note.
 
 **Core modules in `app.js`:**
 - `PitchEngine` — owns the mic `MediaStream`/`AudioContext`/`AnalyserNode` and the per-frame

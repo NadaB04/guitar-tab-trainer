@@ -1,0 +1,18 @@
+{
+  "title": "Breaking the Law",
+  "artist": "Judas Priest",
+  "bpm": 157,
+  "difficulty": "Beginner",
+  "tuning": ["E", "A", "D", "G", "B", "E"],
+  "notes": [
+    { "time": 0.0, "string": 5, "fret": 0, "duration": 0.2 },
+    { "time": 0.2, "string": 5, "fret": 2, "duration": 0.2 },
+    { "time": 0.4, "string": 5, "fret": 3, "duration": 0.3 },
+    { "time": 0.7, "string": 5, "fret": 0, "duration": 0.2 },
+    { "time": 0.9, "string": 5, "fret": 2, "duration": 0.2 },
+    { "time": 1.1, "string": 5, "fret": 3, "duration": 0.3 },
+    { "time": 1.4, "string": 5, "fret": 0, "duration": 0.2 },
+    { "time": 1.6, "string": 5, "fret": 2, "duration": 0.2 },
+    { "time": 1.8, "string": 5, "fret": 3, "duration": 0.4 }
+  ]
+}

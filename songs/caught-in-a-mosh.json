@@ -1,0 +1,24 @@
+{
+  "title": "Caught in a Mosh",
+  "artist": "Anthrax",
+  "bpm": 186,
+  "difficulty": "Advanced",
+  "tuning": ["E", "A", "D", "G", "B", "E"],
+  "notes": [
+    { "time": 0.0, "string": 6, "fret": 0, "duration": 0.13 },
+    { "time": 0.13, "string": 6, "fret": 0, "duration": 0.13 },
+    { "time": 0.26, "string": 6, "fret": 1, "duration": 0.13 },
+    { "time": 0.39, "string": 6, "fret": 0, "duration": 0.13 },
+    { "time": 0.52, "string": 6, "fret": 0, "duration": 0.13 },
+    { "time": 0.65, "string": 6, "fret": 3, "duration": 0.13 },
+    { "time": 0.78, "string": 6, "fret": 0, "duration": 0.13 },
+    { "time": 0.91, "string": 6, "fret": 0, "duration": 0.13 },
+    { "time": 1.04, "string": 6, "fret": 4, "duration": 0.13 },
+    { "time": 1.17, "string": 6, "fret": 0, "duration": 0.13 },
+    { "time": 1.3, "string": 6, "fret": 5, "duration": 0.13 },
+    { "time": 1.43, "string": 6, "fret": 0, "duration": 0.13 },
+    { "time": 1.56, "string": 6, "fret": 6, "duration": 0.13 },
+    { "time": 1.69, "string": 6, "fret": 7, "duration": 0.13 },
+    { "time": 1.82, "string": 6, "fret": 8, "duration": 0.3 }
+  ]
+}

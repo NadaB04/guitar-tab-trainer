@@ -32,5 +32,9 @@
   { "id": "say-it-aint-so", "file": "say-it-aint-so.json" },
   { "id": "machinehead", "file": "machinehead.json" },
   { "id": "hey-man-nice-shot", "file": "hey-man-nice-shot.json" },
-  { "id": "roots-bloody-roots", "file": "roots-bloody-roots.json" }
+  { "id": "roots-bloody-roots", "file": "roots-bloody-roots.json" },
+  { "id": "breaking-the-law", "file": "breaking-the-law.json" },
+  { "id": "caught-in-a-mosh", "file": "caught-in-a-mosh.json" },
+  { "id": "my-curse", "file": "my-curse.json" },
+  { "id": "symphony-of-destruction", "file": "symphony-of-destruction.json" }
 ]

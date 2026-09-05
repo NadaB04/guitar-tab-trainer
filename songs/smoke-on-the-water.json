@@ -3,28 +3,446 @@
   "artist": "Deep Purple",
   "bpm": 112,
   "difficulty": "Beginner",
-  "tuning": ["E", "A", "D", "G", "B", "E"],
+  "tuning": [
+    "E",
+    "A",
+    "D",
+    "G",
+    "B",
+    "E"
+  ],
   "notes": [
-    { "time": 0.0, "string": 4, "fret": 0, "duration": 0.36 },
-    { "time": 0.36, "string": 4, "fret": 3, "duration": 0.36 },
-    { "time": 0.72, "string": 4, "fret": 5, "duration": 0.54 },
-    { "time": 1.44, "string": 4, "fret": 0, "duration": 0.36 },
-    { "time": 1.8, "string": 4, "fret": 3, "duration": 0.36 },
-    { "time": 2.16, "string": 4, "fret": 6, "duration": 0.36 },
-    { "time": 2.52, "string": 4, "fret": 5, "duration": 0.72 },
-    { "time": 3.6, "string": 4, "fret": 0, "duration": 0.36 },
-    { "time": 3.96, "string": 4, "fret": 3, "duration": 0.36 },
-    { "time": 4.32, "string": 4, "fret": 5, "duration": 0.54 },
-    { "time": 5.04, "string": 4, "fret": 3, "duration": 0.36 },
-    { "time": 5.4, "string": 4, "fret": 0, "duration": 0.72 },
-    { "time": 6.5, "string": 4, "fret": 0, "duration": 0.36 },
-    { "time": 6.86, "string": 4, "fret": 3, "duration": 0.36 },
-    { "time": 7.22, "string": 4, "fret": 5, "duration": 0.54 },
-    { "time": 7.94, "string": 4, "fret": 0, "duration": 0.36 },
-    { "time": 8.3, "string": 4, "fret": 3, "duration": 0.36 },
-    { "time": 8.66, "string": 4, "fret": 6, "duration": 0.36 },
-    { "time": 9.02, "string": 4, "fret": 5, "duration": 0.36 },
-    { "time": 9.38, "string": 4, "fret": 3, "duration": 0.36 },
-    { "time": 9.74, "string": 4, "fret": 0, "duration": 1.0 }
+    {
+      "time": 0,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 0.36,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 0.72,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.54
+    },
+    {
+      "time": 1.44,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 1.8,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 2.16,
+      "string": 4,
+      "fret": 6,
+      "duration": 0.36
+    },
+    {
+      "time": 2.52,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.72
+    },
+    {
+      "time": 3.6,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 3.96,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 4.32,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.54
+    },
+    {
+      "time": 5.04,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 5.4,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.72
+    },
+    {
+      "time": 6.62,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 6.98,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 7.34,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.54
+    },
+    {
+      "time": 8.06,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 8.42,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 8.78,
+      "string": 4,
+      "fret": 6,
+      "duration": 0.36
+    },
+    {
+      "time": 9.14,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.72
+    },
+    {
+      "time": 10.22,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 10.58,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 10.94,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.54
+    },
+    {
+      "time": 11.66,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 12.02,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.72
+    },
+    {
+      "time": 13.24,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 13.6,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 13.96,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.54
+    },
+    {
+      "time": 14.68,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 15.04,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 15.4,
+      "string": 4,
+      "fret": 6,
+      "duration": 0.36
+    },
+    {
+      "time": 15.76,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.72
+    },
+    {
+      "time": 16.84,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 17.2,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 17.56,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.54
+    },
+    {
+      "time": 18.28,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 18.64,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.72
+    },
+    {
+      "time": 19.86,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 20.22,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 20.58,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.54
+    },
+    {
+      "time": 21.3,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 21.66,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 22.02,
+      "string": 4,
+      "fret": 6,
+      "duration": 0.36
+    },
+    {
+      "time": 22.38,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.72
+    },
+    {
+      "time": 23.46,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 23.82,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 24.18,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.54
+    },
+    {
+      "time": 24.9,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 25.26,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.72
+    },
+    {
+      "time": 26.48,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 26.84,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 27.2,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.54
+    },
+    {
+      "time": 27.92,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 28.28,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 28.64,
+      "string": 4,
+      "fret": 6,
+      "duration": 0.36
+    },
+    {
+      "time": 29,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.72
+    },
+    {
+      "time": 30.08,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 30.44,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 30.8,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.54
+    },
+    {
+      "time": 31.52,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 31.88,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.72
+    },
+    {
+      "time": 33.1,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 33.46,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 33.82,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.54
+    },
+    {
+      "time": 34.54,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 34.9,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 35.26,
+      "string": 4,
+      "fret": 6,
+      "duration": 0.36
+    },
+    {
+      "time": 35.62,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.72
+    },
+    {
+      "time": 36.7,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.36
+    },
+    {
+      "time": 37.06,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 37.42,
+      "string": 4,
+      "fret": 5,
+      "duration": 0.54
+    },
+    {
+      "time": 38.14,
+      "string": 4,
+      "fret": 3,
+      "duration": 0.36
+    },
+    {
+      "time": 38.5,
+      "string": 4,
+      "fret": 0,
+      "duration": 0.72
+    }
   ]
 }

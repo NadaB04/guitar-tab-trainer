@@ -1,0 +1,23 @@
+{
+  "title": "My Curse",
+  "artist": "Killswitch Engage",
+  "bpm": 144,
+  "difficulty": "Advanced",
+  "tuning": ["C", "G", "C", "F", "A", "D"],
+  "tuningOffsets": [-2, -2, -2, -2, -2, -4],
+  "notes": [
+    { "time": 0.0, "string": 6, "fret": 8, "duration": 0.15 },
+    { "time": 0.15, "string": 6, "fret": 8, "duration": 0.15 },
+    { "time": 0.3, "string": 6, "fret": 8, "duration": 0.15 },
+    { "time": 0.45, "string": 6, "fret": 8, "duration": 0.15 },
+    { "time": 0.6, "string": 6, "fret": 8, "duration": 0.15 },
+    { "time": 0.75, "string": 6, "fret": 8, "duration": 0.3 },
+
+    { "time": 1.05, "string": 6, "fret": 7, "duration": 0.15 },
+    { "time": 1.2, "string": 6, "fret": 7, "duration": 0.15 },
+    { "time": 1.35, "string": 6, "fret": 7, "duration": 0.15 },
+    { "time": 1.5, "string": 6, "fret": 7, "duration": 0.15 },
+    { "time": 1.65, "string": 6, "fret": 7, "duration": 0.15 },
+    { "time": 1.8, "string": 6, "fret": 7, "duration": 0.3 }
+  ]
+}

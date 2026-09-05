@@ -21,10 +21,16 @@ not on a timer or keyboard input. Spotify-styled dark UI. No build step, no fram
 Three files, no modules/bundler: `index.html` (structure/screens), `style.css` (Spotify-style dark
 theme), `app.js` (all logic, plain globals/objects, loaded as a single script).
 
-**Screens** (`Screens.show(id)` toggles `.active` on `#screen-<id>`):
-- `menu` — song grid, loaded from `songs/manifest.json` + one JSON file per song.
+**Screens** (`Screens.show(id)` toggles `.active` on `#screen-<id>`; also pauses/resumes whichever
+of `PlayMode`/`Tuner` isn't the destination screen, since both share the one `PitchEngine` session):
+- `menu` — song grid, loaded from `songs/manifest.json` + one JSON file per song. A tuning-filter
+  chip row above the grid (`renderTuningFilters`) groups songs by `tuningKey(song.tuning)` (a
+  display string, e.g. `"e B G D A E"` — high-to-low, high-e lowercased, same convention as
+  `stringLabel`); selection persists in `localStorage` (`activeTuningFilter`).
 - `play` — the practice screen. Has sub-states toggled by hiding/showing divs rather than
   separate screens: `mic-gate` → `calibration-panel` → `play-surface` → `play-results`.
+- `tuner` — standalone chromatic tuner (see `Tuner` below). Has its own `mic-gate` → surface flow
+  but reuses the same `PitchEngine` session if `play` already started one (no re-prompt).
 
 **Song data** (`songs/*.json`, indexed by `songs/manifest.json`): `{ title, artist, bpm, difficulty,
 tuning, tuningOffsets, notes: [{string, fret, duration}] }`. `string` is 1–6 using standard tab
@@ -47,39 +53,82 @@ mistake (happened once while authoring these; caught by testing against a synthe
 expected open-string frequency).
 
 Note data was cross-checked against at least two independent sources (Ultimate Guitar,
-onestringsongs.com, gtdb.org for tuning) per song, simplified to a single string/monophonic line
-where the real riff uses power chords, dyads, or bends (the pitch detector can only track one note
-at a time). It was NOT scraped programmatically — treat it as a one-time transcription, not
-something that stays in sync if the source tabs are later edited. A prior pass (before this
-verification habit existed) had at least one confirmed wrong note that had to be fixed later —
-don't assume old song files are correct without spot-checking if something sounds off.
+onestringsongs.com, gtdb.org for tuning, cifraclub.com, guitaretab.com) per song, simplified to a
+single string/monophonic line where the real riff uses power chords, dyads, or bends (the pitch
+detector can only track one note at a time). It was NOT scraped programmatically — treat it as a
+one-time transcription, not something that stays in sync if the source tabs are later edited. A
+prior pass (before this verification habit existed) had at least one confirmed wrong note that had
+to be fixed later — don't assume old song files are correct without spot-checking if something
+sounds off.
+
+**Song data is currently a mix of two states**, not yet consistent across the library: most songs
+(8–28 notes) are still a short excerpt of just the main riff, while a handful —
+`smoke-on-the-water`, `back-in-black`, `the-diary-of-jane`, `seven-nation-army`,
+`animal-i-have-become` (72–215 notes) — have been rebuilt to cover the real song's full structure
+(intro/verse/chorus/bridge/outro), not just a looped riff. When asked to do this for another song,
+match the fuller songs' approach, not the short ones': pull real structural sections from actual
+tab data rather than just repeating one riff snippet, but stay honest to what the recording
+actually does — e.g. `seven-nation-army`'s verse genuinely is just the riff continuing under the
+vocal (confirmed against a piano transcription's bass part), so it repeats the riff there on
+purpose; the fix in a case like that is arrangement (real transitions, a real distinct bridge
+section) and phrasing, not inventing pitches that aren't in the recording. Ultimate Guitar's tab
+text is not present in the rendered page WebFetch sees (it's client-rendered) — fetch the raw HTML
+with `curl` instead and pull the tab text out of the `id="js-store"` element's `data-content`
+attribute (HTML-entity-decode, then `JSON.parse`; the text lives at
+`store.page.data.tab_view.wiki_tab.content`). Generate the final note timing arithmetic with a
+small throwaway Node script (build a `notes` array via `push(string, fret, duration)`/`gap(seconds)`
+helpers that track a running `time` cursor, `JSON.stringify` the result) rather than hand-typing
+times — much less error-prone for anything beyond a handful of notes. These generator scripts
+aren't checked in anywhere (only their JSON output is committed) — there's no existing one to copy,
+write a fresh one per song.
 
 **Core modules in `app.js`:**
 - `PitchEngine` — owns the mic `MediaStream`/`AudioContext`/`AnalyserNode` and the per-frame
-  analysis loop (`_loop`, driven by `requestAnimationFrame`). Applies a software gain boost
-  (`DEFAULT_INPUT_GAIN`, adjustable live via the Boost slider) before analysis, since a direct
-  instrument signal is often much quieter than a voice. Explicitly disables the browser's
-  echo-cancellation/noise-suppression/auto-gain (they're tuned for speech and distort instrument
-  harmonics). Calls `onFrame(freqOrNull)` every frame — the callback is swapped depending on
-  UI state (`Calibration.onFrame` during calibration, `PlayMode.onPitchFrame` during practice).
-- `autoCorrelate(buf, sampleRate)` — ACF2+ style autocorrelation pitch detector. Two independent
-  gates before it trusts a frequency: `MIN_RMS` (raw loudness floor) and `MIN_CONFIDENCE`
-  (`maxVal / c[0]`, i.e. how periodic the signal is — this is what actually distinguishes a real
-  note from noise, and is amplitude-invariant, so it works the same at low or high gain).
-  Populates `lastPitchDebug = {rms, confidence}` every call for on-screen diagnostics.
+  analysis loop (`_loop`, driven by `requestAnimationFrame`). `analyser.fftSize` is `4096` (not the
+  more typical `2048`) — low strings need several full cycles in the window for autocorrelation to
+  lock onto the fundamental with any real confidence margin (measured: a clean low-E tone was only
+  ~0.6-0.7 confidence at 2048 vs ~0.85 at 4096, against a `MIN_CONFIDENCE` of 0.45), at the cost of
+  ~43ms more latency. Applies a software gain boost (`DEFAULT_INPUT_GAIN`, adjustable live via the
+  Boost slider) before analysis, since a direct instrument signal is often much quieter than a
+  voice. Explicitly disables the browser's echo-cancellation/noise-suppression/auto-gain (they're
+  tuned for speech and distort instrument harmonics). Calls `onFrame(freqOrNull)` every frame — the
+  callback is swapped depending on which screen is active (`Calibration.onFrame`,
+  `PlayMode.onPitchFrame`, or `Tuner.onFrame`).
+- `autoCorrelate(buf, sampleRate)` — ACF2+ style autocorrelation pitch detector: a *blind* global
+  search for whatever single frequency best explains the whole buffer. Two independent gates before
+  it trusts a frequency: `MIN_RMS` (raw loudness floor) and `MIN_CONFIDENCE` (`maxVal / c[0]`, i.e.
+  how periodic the signal is — this is what actually distinguishes a real note from noise, and is
+  amplitude-invariant, so it works the same at low or high gain). Populates
+  `lastPitchDebug = {rms, confidence}` every call for on-screen diagnostics.
+- `correlationAtFreq(buf, sampleRate, freq)` — the non-blind counterpart: instead of asking "what's
+  the one best-fitting frequency in this buffer," asks "how strongly does this buffer repeat at
+  *this specific known* frequency's period" (interpolated autocorrelation value at that one lag,
+  normalized by `c[0]` the same way). Exists because when a new note is played while the previous
+  one is still ringing (low strings sustain the longest, so this hits them hardest), the buffer is
+  a blend of both and `autoCorrelate`'s global search locks onto neither cleanly — it settles on a
+  blended, wrong frequency that satisfies no real note. Since gameplay always knows the exact
+  target frequency in advance, `PlayMode.targetedMatch` uses this to sidestep that failure mode
+  entirely — see below.
 - `Calibration` — ungated, continuous "here's what I currently hear" readout (note name, Hz,
   clarity, level) shown before practice starts, so it's obvious whether the pipeline hears
   anything at all vs. hears it but rejects it. Exists specifically because mic/interface signal
   chains vary wildly and blind threshold-tuning wasn't working — see "Known tuning constants" below.
 - `PlayMode` — practice state machine. `onPitchFrame` compares detected pitch (in cents, via
   `centsBetween`) against the current target note's frequency (`noteFrequency(string, fret)`).
-  Requires `CONFIRM_FRAMES` consecutive in-tolerance frames to advance (fast) or
-  `WRONG_CONFIRM_FRAMES` consecutive out-of-tolerance frames to log a miss (slower, to ride out
-  pick-attack transient noise), each followed by a short cooldown. A frame that doesn't match the
-  current target but does match one of the previous 1-2 notes (`isRecentBleed`) is treated as
-  neutral ring-through, not a miss. When the next target note is the same pitch as the one just
-  played, `reattackNeeded`/`trackReattack` block it from re-matching on the previous note's own
-  decaying ring — it needs either a silence gap or an RMS onset spike first. Renders the
+  A frame counts as a match if *either* the blind `autoCorrelate` result lands in tolerance, *or*
+  `targetedMatch` does: it calls `correlationAtFreq` directly against the target's own frequency
+  (skipped when the blind check already passed — it's a fallback, not run every frame) and accepts
+  if that correlation clears `TARGET_CORR_CONFIDENCE` *and* clearly beats the correlation at any of
+  the last couple of played notes' own frequencies (guards against accepting mere leftover ring
+  from a note that hasn't finished decaying). Requires `CONFIRM_FRAMES` consecutive matching frames
+  to advance (fast) or `WRONG_CONFIRM_FRAMES` consecutive out-of-tolerance *blind* frames to log a
+  miss (slower, to ride out pick-attack transient noise — "wrong" detection has no known target to
+  check against, so it can't use the targeted path), each followed by a short cooldown. A frame
+  that doesn't match the current target but does match one of the previous 1-2 notes
+  (`isRecentBleed`) is treated as neutral ring-through, not a miss. When the next target note is
+  the same pitch as the one just played, `reattackNeeded`/`trackReattack` block it from re-matching
+  on the previous note's own decaying ring — it needs either a silence gap or an RMS onset spike
+  first. Renders the
   horizontal scrolling tab (`buildTrackStrip`/`updateTrackTransform`): all notes are real DOM
   elements (diamond "gem" chips, each with a "sustain tail" bar behind it) laid out left-to-right
   via `computeNotePositions()`, which places each chip by its real `time` field (seconds) ×
@@ -106,13 +155,27 @@ don't assume old song files are correct without spot-checking if something sound
   from `load`) populates the `#metronome-bpm` `<select>` from `METRONOME_BPM_PRESETS` plus the
   song's own BPM if not already a preset, and defaults selection to the song's BPM. `PlayMode.stop`
   also stops it, so it doesn't keep ticking after leaving the play screen.
+- `Tuner` — standalone chromatic-per-string tuner (`tuner` screen). Its tuning picker
+  (`buildTunings`) is derived from whatever tunings actually appear in `SONGS` (same grouping as
+  the menu's tuning filter, so the two always stay in sync automatically) — not a separate
+  hardcoded list. Live/ungated like `Calibration`, no `CONFIRM_FRAMES` debounce. Auto-detects which
+  of the 6 open strings the incoming pitch is nearest to in cents (`onFrame`), or locks to a
+  specific string if the player clicks one (`lockedString`) — useful when a wildly out-of-tune
+  string would otherwise auto-target the wrong one. Uses its own tighter `TUNER_CENTS_TOLERANCE`
+  (±8¢) than gameplay's `MATCH_CENTS_TOLERANCE` (±35¢), since a tuner needs real tuning precision
+  while gameplay is deliberately lenient.
 
-**Mic session persistence:** `PlayMode.stop()` (called by `Screens.show` on any navigation away
-from `play`) only pauses — it does not close `PitchEngine`'s `AudioContext`/stream. `PlayMode.load`
-checks `PitchEngine.ctx`: if a session is already running it skips straight to `play-surface`,
-bypassing `mic-gate` and `calibration-panel`. So the permission/calibration flow only happens once
-per page load, not once per song. If a genuine full mic teardown is ever needed, call
-`PitchEngine.stop()` directly — it's no longer invoked automatically anywhere.
+**Mic session persistence:** `PlayMode.stop()`/`Tuner.stop()` (called by `Screens.show` on any
+navigation away from their screen) only pause — they don't close `PitchEngine`'s
+`AudioContext`/stream, and both null out `PitchEngine.onFrame` unconditionally, so whichever of
+`play`/`tuner` is entered next just reassigns it (`PlayMode.load`/`Tuner.enter`) rather than
+needing to coordinate who "owns" the callback. Both check `PitchEngine.ctx`: if a session is
+already running they skip straight past `mic-gate`/`calibration-panel` to their surface. So the
+permission/calibration flow only happens once per page load, not once per song or per screen
+visit. `MicDevices.populate`/`selectedId` take an optional `selectId` param (defaulting to the Play
+screen's `#mic-device-select`) so the Tuner's `#tuner-mic-device-select` can reuse the same
+enumerate/remember logic against its own `<select>`. If a genuine full mic teardown is ever needed,
+call `PitchEngine.stop()` directly — it's no longer invoked automatically anywhere.
 
 **Testing without hardware:** since this has only ever been driven from an automated browser
 session with no real guitar/mic attached, verification relies on constructing a fake
@@ -126,9 +189,17 @@ manually in a loop when checking results programmatically.
 ## Known tuning constants (top of `app.js`)
 
 `MIN_RMS`, `MIN_CONFIDENCE`, `MATCH_CENTS_TOLERANCE`, `CONFIRM_FRAMES`, `WRONG_CONFIRM_FRAMES`,
-`*_COOLDOWN_MS`, `DEFAULT_INPUT_GAIN`. These have been revised several times against synthetic
-signals only (no real mic access from this environment) and real-hardware behavior has not yet
-been confirmed working end-to-end. If the user reports detection problems again, the calibration
-screen's live readout (note/Hz/clarity/level) is the fastest way to tell whether it's a
-device/routing issue (nothing shows up regardless of playing) vs. a threshold issue (something
-shows up but is wrong/unstable) — ask for those numbers before changing constants blindly again.
+`*_COOLDOWN_MS`, `DEFAULT_INPUT_GAIN`, `TARGET_CORR_CONFIDENCE`, `TUNER_CENTS_TOLERANCE`. This
+environment still has no real mic access itself, but the user now has and has reported two real
+detection problems against actual playing, both diagnosed and fixed the same way — worth repeating
+for the next one: (1) get the user to describe what the calibration/tuner readout actually shows
+(right note/Hz but not advancing? nothing shows up at all? unstable/wrong?) to tell a
+device/routing issue from a detection-logic issue; (2) build a synthetic repro of the *specific*
+scenario in the browser (a fake `MediaStream` from an oscillator, or by directly constructing a
+`Float32Array` buffer and calling `autoCorrelate`/`correlationAtFreq` on it — see "Testing without
+hardware" above) rather than tweaking constants blind; (3) fix the underlying detection logic, not
+just retune a threshold — both real fixes so far were algorithm changes, not constant nudges:
+widening `fftSize` 2048→4096 fixed low-string confidence but made note-to-note transitions worse
+(the previous note's ring blends into the new one's analysis window for longer), which then needed
+`correlationAtFreq`/`targetedMatch` to fix in turn. A constant-only fix is liable to trade one of
+these problems for the other.

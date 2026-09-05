@@ -15,13 +15,56 @@
         <span class="brand-dot"></span>
         <span>ShredType</span>
       </div>
+      <button id="nav-tuner-btn" class="pill ghost small">🎵 Tuner</button>
     </header>
 
     <!-- SONG SELECT -->
     <section id="screen-menu" class="screen active">
       <h1 class="page-title">Learn a riff</h1>
       <p class="tagline">Plug in, play along, and the tab only moves forward when you actually play the right note.</p>
+      <div id="tuning-filter-row" class="tuning-filter-row"></div>
       <div id="song-list" class="song-grid"></div>
+    </section>
+
+    <!-- TUNER -->
+    <section id="screen-tuner" class="screen">
+      <div class="play-topline">
+        <button id="tuner-back-btn" class="pill ghost">← Back</button>
+        <div class="play-song-info">
+          <div style="font-weight:800; font-size:1.15rem;">Tuner</div>
+          <div id="tuner-tuning-name" class="tuner-tuning-name">—</div>
+        </div>
+        <div style="width:88px;"></div>
+      </div>
+
+      <div id="tuner-mic-gate" class="mic-gate">
+        <p>ShredType listens through your microphone to help you tune up.</p>
+        <div class="mic-device-row">
+          <label for="tuner-mic-device-select">Input device</label>
+          <select id="tuner-mic-device-select"></select>
+        </div>
+        <button id="tuner-mic-start-btn" class="pill primary">🎤 Start Listening</button>
+        <p id="tuner-mic-error" class="mic-error"></p>
+      </div>
+
+      <div id="tuner-surface" class="tuner-surface hidden">
+        <div class="tuning-select-row">
+          <label for="tuner-tuning-select">Tuning</label>
+          <select id="tuner-tuning-select"></select>
+        </div>
+
+        <div id="tuner-strings" class="tuner-strings"></div>
+
+        <div class="tuner-big">
+          <div id="tuner-big-note" class="tuner-big-note">—</div>
+          <div id="tuner-big-direction" class="tuner-big-direction">Pick a string</div>
+          <div class="tuner-track big">
+            <div class="tuner-zone"></div>
+            <div id="tuner-big-needle" class="tuner-needle"></div>
+          </div>
+          <div id="tuner-big-readout" class="tuner-readout">Listening…</div>
+        </div>
+      </div>
     </section>
 
     <!-- PLAY MODE -->

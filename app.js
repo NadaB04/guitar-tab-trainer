@@ -33,6 +33,15 @@ const MIN_CONFIDENCE = 0.45; // how "periodic" the signal must be — filters ou
 const MIN_RMS = 0.005; // just above mic self-noise — the confidence check (below) does the real noise rejection,
                         // and it's scale-invariant, so this floor can stay low without letting noise back in
 
+// How strongly the buffer must repeat at a *specific known* frequency (see correlationAtFreq)
+// for PlayMode to accept it as a match even when blind autoCorrelate can't find one confidently.
+// See PlayMode.targetedMatch for why this exists — the still-ringing previous note blends with
+// a freshly-played one enough that global autocorrelation locks onto neither cleanly, especially
+// on low strings which ring out the longest. Measured against a simulated ringing-note-transition
+// (old note decaying under a fresh pick attack): correlation at the true new-note frequency climbs
+// past this well before global autocorrelate's blended estimate gets anywhere near either note.
+const TARGET_CORR_CONFIDENCE = 0.5;
+
 // Repeated-note onset detection (see PlayMode.trackReattack): a pick-attack spike is an
 // RMS jump over the recent rolling minimum; the window length trades detection latency
 // against not being fooled by ordinary frame-to-frame jitter in a sustained ring.
@@ -72,6 +81,13 @@ function freqToNoteName(freq) {
 function stringLabel(song, stringNum) {
   const raw = song.tuning[6 - stringNum];
   return stringNum === 1 ? raw.toLowerCase() : raw;
+}
+
+// Display/group key for a song's tuning: high-to-low letter order (matches stringLabel's
+// convention — `tuning` itself is stored low-to-high) with the high e lowercased, e.g.
+// ["C","G","C","F","A","D"] (stored) -> "D A F C G C" (displayed).
+function tuningKey(tuning) {
+  return [...tuning].reverse().map((n, i) => (i === 0 ? n.toLowerCase() : n)).join(" ");
 }
 
 /* ---------------------------------------------------------------------- *
@@ -140,6 +156,32 @@ function autoCorrelate(buf, sampleRate) {
   return freq;
 }
 
+// Unlike autoCorrelate (which searches the whole lag range for whatever period dominates),
+// this asks a narrower, more answerable question: "how strongly does the signal repeat at
+// the period for THIS specific known frequency?" — computed directly via the interpolated
+// autocorrelation value at that one lag, normalized by c[0] the same way autoCorrelate's
+// confidence is. Used by PlayMode to match against a known target frequency even when the
+// buffer is a blend of two notes (previous one still ringing under a freshly-played one) and
+// no single frequency dominates enough for autoCorrelate's global peak search to lock onto
+// either cleanly — see PlayMode.targetedMatch.
+function correlationAtFreq(buf, sampleRate, freq) {
+  const n = buf.length;
+  const lag = sampleRate / freq;
+  const lagFloor = Math.floor(lag);
+  if (lagFloor < 1 || lagFloor >= n - 1) return 0;
+  function corrAtLag(L) {
+    let sum = 0;
+    for (let j = 0; j < n - L; j++) sum += buf[j] * buf[j + L];
+    return sum;
+  }
+  const c0 = corrAtLag(0);
+  if (c0 <= 0) return 0;
+  const cLow = corrAtLag(lagFloor);
+  const cHigh = corrAtLag(lagFloor + 1);
+  const frac = lag - lagFloor;
+  return (cLow + (cHigh - cLow) * frac) / c0;
+}
+
 /* ---------------------------------------------------------------------- *
  * Pitch engine — owns the mic stream / AudioContext / analysis loop
  * ---------------------------------------------------------------------- */
@@ -169,7 +211,12 @@ const PitchEngine = {
     this.gainNode = this.ctx.createGain();
     this.gainNode.gain.value = DEFAULT_INPUT_GAIN;
     this.analyser = this.ctx.createAnalyser();
-    this.analyser.fftSize = 2048;
+    // 4096 (not 2048): low strings need several full cycles in the window for autocorrelation
+    // to lock onto the fundamental confidently — at 2048 a clean low-E tone measured confidence
+    // ~0.6-0.7 vs ~0.9 for high strings, leaving little margin before MIN_CONFIDENCE rejects it
+    // under real mic noise. 4096 raises low-string confidence to ~0.82-0.86, at the cost of
+    // roughly 43ms more detection latency (~85ms window instead of ~43ms at 48kHz).
+    this.analyser.fftSize = 4096;
     source.connect(this.gainNode);
     this.gainNode.connect(this.analyser);
     this.buffer = new Float32Array(this.analyser.fftSize);
@@ -216,8 +263,10 @@ function updateLevelMeter(rms) {
  * ---------------------------------------------------------------------- */
 
 const MicDevices = {
-  async populate() {
-    const select = document.getElementById("mic-device-select");
+  // selectId lets both the Play screen's mic-gate and the standalone Tuner's mic-gate share
+  // this same device list/permission flow (there's still only one shared PitchEngine session).
+  async populate(selectId = "mic-device-select") {
+    const select = document.getElementById(selectId);
     const saved = localStorage.getItem("sht_mic_device_id");
     try {
       const devices = await navigator.mediaDevices.enumerateDevices();
@@ -234,8 +283,8 @@ const MicDevices = {
     }
   },
 
-  selectedId() {
-    return document.getElementById("mic-device-select").value || null;
+  selectedId(selectId = "mic-device-select") {
+    return document.getElementById(selectId).value || null;
   },
 
   remember(deviceId) {
@@ -261,6 +310,168 @@ const Calibration = {
       detailEl.textContent =
         `Waiting for a note… (level ${lastPitchDebug.rms.toFixed(3)}, clarity ${lastPitchDebug.confidence.toFixed(2)})`;
     }
+  },
+};
+
+/* ---------------------------------------------------------------------- *
+ * TUNER — standalone chromatic-per-string tuner. Its tuning list is pulled
+ * straight from whatever tunings actually appear in the song library (same
+ * grouping as the menu's tuning filter), so "the different options" it can
+ * tune to always matches what's playable. Live/ungated like Calibration —
+ * no CONFIRM_FRAMES debounce, since a tuner should feel instantly responsive.
+ * ---------------------------------------------------------------------- */
+
+const TUNER_CENTS_TOLERANCE = 8; // much tighter than gameplay's MATCH_CENTS_TOLERANCE — real tuning precision
+
+const Tuner = {
+  tunings: [],        // [{ key, tuning, tuningOffsets }], derived from SONGS
+  current: null,       // the tuning entry currently selected
+  lockedString: null,  // 1-6 if the player picked a specific string to tune to; null = auto-detect nearest
+  activeString: null,  // whichever string is currently being shown (locked, or nearest-match)
+  listening: false,
+
+  buildTunings() {
+    const map = new Map();
+    for (const { data } of SONGS) {
+      const key = tuningKey(data.tuning);
+      if (!map.has(key)) map.set(key, { key, tuning: data.tuning, tuningOffsets: data.tuningOffsets || null });
+    }
+    this.tunings = [...map.values()].sort((a, b) => a.key.localeCompare(b.key));
+    // Standard tuning first, if present — the expected default to land on.
+    const stdIdx = this.tunings.findIndex((t) => !t.tuningOffsets || t.tuningOffsets.every((o) => o === 0));
+    if (stdIdx > 0) this.tunings.unshift(this.tunings.splice(stdIdx, 1)[0]);
+  },
+
+  enter() {
+    if (!this.tunings.length) this.buildTunings();
+    if (!this.current) this.setTuning(this.tunings[0].key);
+    else this.populateTuningSelect();
+
+    if (PitchEngine.ctx) {
+      // Mic already granted/running from Play mode (or an earlier tuner visit) — reuse it.
+      document.getElementById("tuner-mic-gate").classList.add("hidden");
+      document.getElementById("tuner-surface").classList.remove("hidden");
+      PitchEngine.onFrame = (freq) => this.onFrame(freq);
+      this.listening = true;
+    } else {
+      document.getElementById("tuner-mic-gate").classList.remove("hidden");
+      document.getElementById("tuner-surface").classList.add("hidden");
+      MicDevices.populate("tuner-mic-device-select");
+    }
+  },
+
+  async beginListening() {
+    const deviceId = MicDevices.selectedId("tuner-mic-device-select");
+    try {
+      await PitchEngine.start(null, deviceId);
+      MicDevices.remember(deviceId);
+      MicDevices.populate("tuner-mic-device-select");
+      document.getElementById("tuner-mic-gate").classList.add("hidden");
+      document.getElementById("tuner-surface").classList.remove("hidden");
+      PitchEngine.onFrame = (freq) => this.onFrame(freq);
+      this.listening = true;
+    } catch {
+      document.getElementById("tuner-mic-error").textContent =
+        "Couldn't access that microphone. Check browser permissions, that a mic is connected, and try a different input device above.";
+    }
+  },
+
+  stop() {
+    this.listening = false;
+    PitchEngine.onFrame = null;
+  },
+
+  setTuning(key) {
+    this.current = this.tunings.find((t) => t.key === key) || this.tunings[0];
+    this.lockedString = null;
+    this.activeString = null;
+    this.populateTuningSelect();
+    document.getElementById("tuner-tuning-name").textContent = this.current.key;
+    this.renderStrings();
+  },
+
+  populateTuningSelect() {
+    const select = document.getElementById("tuner-tuning-select");
+    select.innerHTML = this.tunings.map((t) => `<option value="${t.key}">${t.key}</option>`).join("");
+    select.value = this.current.key;
+  },
+
+  stringFreq(stringNum) {
+    return noteFrequency(stringNum, 0, this.current.tuningOffsets);
+  },
+
+  renderStrings() {
+    const el = document.getElementById("tuner-strings");
+    el.innerHTML = STRING_ORDER.map((s) => `
+      <button class="tuner-string-btn" data-string="${s}">
+        <span class="string-num">${stringLabel(this.current, s)} string</span>
+        <span class="string-note">${freqToNoteName(this.stringFreq(s))}</span>
+      </button>`).join("");
+    el.querySelectorAll(".tuner-string-btn").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const s = Number(btn.dataset.string);
+        this.lockedString = this.lockedString === s ? null : s; // click again to release back to auto
+        this.updateStringHighlights();
+      });
+    });
+    this.updateStringHighlights();
+  },
+
+  onFrame(freq) {
+    if (!this.listening) return;
+    if (!freq) {
+      this.activeString = this.lockedString;
+      this.updateReadout(null, null);
+      this.updateStringHighlights();
+      return;
+    }
+    let targetString = this.lockedString;
+    if (!targetString) {
+      let best = null, bestAbsCents = Infinity;
+      for (const s of STRING_ORDER) {
+        const absCents = Math.abs(centsBetween(freq, this.stringFreq(s)));
+        if (absCents < bestAbsCents) { bestAbsCents = absCents; best = s; }
+      }
+      targetString = best;
+    }
+    this.activeString = targetString;
+    const cents = centsBetween(freq, this.stringFreq(targetString));
+    this.updateReadout(freq, cents);
+    this.updateStringHighlights(cents);
+  },
+
+  updateReadout(freq, cents) {
+    const noteEl = document.getElementById("tuner-big-note");
+    const dirEl = document.getElementById("tuner-big-direction");
+    const needle = document.getElementById("tuner-big-needle");
+    const readout = document.getElementById("tuner-big-readout");
+    if (!freq) {
+      noteEl.textContent = this.activeString ? stringLabel(this.current, this.activeString).toUpperCase() : "—";
+      noteEl.classList.remove("in-tune");
+      dirEl.textContent = this.lockedString ? "Pluck the string" : "Pick a string";
+      needle.style.left = "50%";
+      needle.style.background = "#fff";
+      readout.textContent = `Listening… (level ${lastPitchDebug.rms.toFixed(3)}, clarity ${lastPitchDebug.confidence.toFixed(2)})`;
+      return;
+    }
+    const inTune = Math.abs(cents) <= TUNER_CENTS_TOLERANCE;
+    noteEl.textContent = freqToNoteName(this.stringFreq(this.activeString));
+    noteEl.classList.toggle("in-tune", inTune);
+    dirEl.textContent = inTune ? "In tune ✓" : cents > 0 ? "Tune down ▼" : "Tune up ▲";
+    const clamped = Math.max(-50, Math.min(50, cents));
+    needle.style.left = `${50 + clamped}%`;
+    needle.style.background = inTune ? "var(--green-bright)" : "#fff";
+    readout.textContent = `${freq.toFixed(1)} Hz · ${cents > 0 ? "+" : ""}${cents.toFixed(0)}¢`;
+  },
+
+  updateStringHighlights(cents) {
+    document.querySelectorAll("#tuner-strings .tuner-string-btn").forEach((btn) => {
+      const s = Number(btn.dataset.string);
+      const inTune = this.activeString === s && cents != null && Math.abs(cents) <= TUNER_CENTS_TOLERANCE;
+      btn.classList.toggle("locked", this.lockedString === s);
+      btn.classList.toggle("auto-target", !this.lockedString && this.activeString === s);
+      btn.classList.toggle("in-tune", inTune);
+    });
   },
 };
 
@@ -409,6 +620,8 @@ const Screens = {
     document.querySelectorAll(".screen").forEach((el) => el.classList.remove("active"));
     document.getElementById(`screen-${id}`).classList.add("active");
     if (id !== "play") PlayMode.stop();
+    if (id !== "tuner") Tuner.stop();
+    else Tuner.enter();
   },
 };
 
@@ -436,9 +649,46 @@ function bumpCompletions(songId) {
 
 const COVER_EMOJI = ["🎸", "🤘", "🔥", "⚡"];
 
+// null = "All Tunings". Persisted so the filter survives a reload, like the mic device pick.
+let activeTuningFilter = localStorage.getItem("sht_tuning_filter") || null;
+
+function renderTuningFilters() {
+  const row = document.getElementById("tuning-filter-row");
+  const counts = new Map();
+  for (const { data } of SONGS) {
+    const key = tuningKey(data.tuning);
+    counts.set(key, (counts.get(key) || 0) + 1);
+  }
+  const groups = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+
+  // A filter selection from a previous visit might reference a tuning no songs currently use.
+  if (activeTuningFilter && !counts.has(activeTuningFilter)) activeTuningFilter = null;
+
+  const chips = [
+    `<button class="tuning-chip${activeTuningFilter ? "" : " active"}" data-tuning="">All<span class="count">${SONGS.length}</span></button>`,
+    ...groups.map(([key, count]) =>
+      `<button class="tuning-chip${activeTuningFilter === key ? " active" : ""}" data-tuning="${key}">${key}<span class="count">${count}</span></button>`
+    ),
+  ];
+  row.innerHTML = chips.join("");
+
+  row.querySelectorAll(".tuning-chip").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      activeTuningFilter = chip.dataset.tuning || null;
+      if (activeTuningFilter) localStorage.setItem("sht_tuning_filter", activeTuningFilter);
+      else localStorage.removeItem("sht_tuning_filter");
+      renderSongList();
+    });
+  });
+}
+
 function renderSongList() {
+  renderTuningFilters();
   const list = document.getElementById("song-list");
-  list.innerHTML = SONGS.map(({ id, data }, i) => {
+  const songs = activeTuningFilter
+    ? SONGS.filter(({ data }) => tuningKey(data.tuning) === activeTuningFilter)
+    : SONGS;
+  list.innerHTML = songs.map(({ id, data }, i) => {
     const c1 = LANE_COLORS[(i % 6) + 1];
     const c2 = LANE_COLORS[((i + 3) % 6) + 1];
     const done = completions(id);
@@ -693,23 +943,23 @@ const PlayMode = {
 
     this.trackReattack(freq, lastPitchDebug.rms);
 
-    if (!freq) {
-      this.matchCount = 0;
-      this.wrongCandidateCount = 0;
-      this.lastWrongNoteId = null;
-      this.setTuner(null, null);
-      return;
-    }
-
     const note = this.notes[this.currentIndex];
     const targetFreq = noteFrequency(note.string, note.fret, this.song.tuningOffsets);
-    const cents = centsBetween(freq, targetFreq);
-    this.setTuner(freq, cents);
+
+    if (freq) this.setTuner(freq, centsBetween(freq, targetFreq));
+    else this.setTuner(null, null);
 
     const now = performance.now();
     if (now < this.cooldownUntil) return;
 
-    if (Math.abs(cents) <= MATCH_CENTS_TOLERANCE) {
+    const blindMatch = !!freq && Math.abs(centsBetween(freq, targetFreq)) <= MATCH_CENTS_TOLERANCE;
+    // If blind pitch detection didn't land on the target — often because the still-ringing
+    // previous note is blended into the same analysis window and dragged the global estimate
+    // off both notes — also ask directly whether the buffer shows strong evidence of the
+    // target's own frequency specifically. See targetedMatch / correlationAtFreq.
+    const matched = blindMatch || (!blindMatch && this.targetedMatch(targetFreq));
+
+    if (matched) {
       if (this.reattackNeeded && !this.reattackSeen) {
         // Right pitch, but so far it's indistinguishable from the previous identical
         // note still ringing — wait for a silence gap or a fresh pick-attack spike.
@@ -722,26 +972,59 @@ const PlayMode = {
         this.cooldownUntil = now + CORRECT_COOLDOWN_MS;
         this.correctHit();
       }
-    } else if (this.isRecentBleed(freq)) {
+      return;
+    }
+
+    if (!freq) {
+      this.matchCount = 0;
+      this.wrongCandidateCount = 0;
+      this.lastWrongNoteId = null;
+      return;
+    }
+
+    if (this.isRecentBleed(freq)) {
       // Likely the previous note (or the one before it) still ringing/decaying, not a
       // wrong pick — ignore it: don't reset progress toward the current note, don't
       // count it as a wrong attempt either.
       return;
-    } else {
-      this.matchCount = 0;
-      const noteId = Math.round(69 + 12 * Math.log2(freq / 440));
-      if (noteId === this.lastWrongNoteId) {
-        this.wrongCandidateCount++;
-      } else {
-        this.lastWrongNoteId = noteId;
-        this.wrongCandidateCount = 1;
-      }
-      if (this.wrongCandidateCount >= WRONG_CONFIRM_FRAMES) {
-        this.wrongCandidateCount = 0;
-        this.cooldownUntil = now + WRONG_COOLDOWN_MS;
-        this.wrongAttempt();
-      }
     }
+
+    this.matchCount = 0;
+    const noteId = Math.round(69 + 12 * Math.log2(freq / 440));
+    if (noteId === this.lastWrongNoteId) {
+      this.wrongCandidateCount++;
+    } else {
+      this.lastWrongNoteId = noteId;
+      this.wrongCandidateCount = 1;
+    }
+    if (this.wrongCandidateCount >= WRONG_CONFIRM_FRAMES) {
+      this.wrongCandidateCount = 0;
+      this.cooldownUntil = now + WRONG_COOLDOWN_MS;
+      this.wrongAttempt();
+    }
+  },
+
+  // Directly tests "how strongly does the buffer repeat at the target's own frequency" rather
+  // than relying on blind autoCorrelate to pick it as the single global winner — see
+  // TARGET_CORR_CONFIDENCE and correlationAtFreq for why. Guards against accepting mere
+  // leftover ring from a recently-played note by requiring the target to clearly out-correlate
+  // any of the last couple of notes at their own frequencies (skipping ones that are the same
+  // pitch as the target, which reattack logic already handles separately).
+  targetedMatch(targetFreq) {
+    if (lastPitchDebug.rms < MIN_RMS) return false;
+    if (!PitchEngine.buffer || !PitchEngine.ctx) return false;
+    const sampleRate = PitchEngine.ctx.sampleRate;
+    const targetCorr = correlationAtFreq(PitchEngine.buffer, sampleRate, targetFreq);
+    if (targetCorr < TARGET_CORR_CONFIDENCE) return false;
+    for (const idx of [this.currentIndex - 1, this.currentIndex - 2]) {
+      if (idx < 0) continue;
+      const prev = this.notes[idx];
+      const prevFreq = noteFrequency(prev.string, prev.fret, this.song.tuningOffsets);
+      if (Math.abs(centsBetween(prevFreq, targetFreq)) <= MATCH_CENTS_TOLERANCE) continue;
+      const prevCorr = correlationAtFreq(PitchEngine.buffer, sampleRate, prevFreq);
+      if (prevCorr >= targetCorr) return false; // ambiguous — could just be the old note's tail
+    }
+    return true;
   },
 
   // True if `freq` matches one of the last couple of already-played notes rather than
@@ -912,5 +1195,10 @@ document.getElementById("play-back-btn").addEventListener("click", () => { Scree
 document.getElementById("play-menu-btn").addEventListener("click", () => { Screens.show("menu"); renderSongList(); });
 document.getElementById("play-restart-btn").addEventListener("click", () => PlayMode.load(PlayMode.songId, PlayMode.song));
 document.getElementById("play-replay-btn").addEventListener("click", () => PlayMode.load(PlayMode.songId, PlayMode.song));
+
+document.getElementById("nav-tuner-btn").addEventListener("click", () => Screens.show("tuner"));
+document.getElementById("tuner-back-btn").addEventListener("click", () => Screens.show("menu"));
+document.getElementById("tuner-mic-start-btn").addEventListener("click", () => Tuner.beginListening());
+document.getElementById("tuner-tuning-select").addEventListener("change", (e) => Tuner.setTuning(e.target.value));
 
 boot();

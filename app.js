@@ -620,67 +620,76 @@ const Metronome = {
  * with its own decay (highs die fast, the fundamental rings), scaled by a
  * pluck-position comb, plus a short filtered-noise pick attack.
  *
- * That stack feeds one shared "amp", built once: a light compressor → gain
- * → asymmetric waveshaper overdrive (`_drive`/`_bias` are the gain/character
- * knobs) → an amp voicing EQ (low-mid bump, upper-mid bite, ~4.7 kHz cab
- * roll-off). Overlapping notes crunch through it together like a real amp.
+ * That stack feeds one shared two-stage high-gain "amp" (see `ensure`):
+ * tighten/pre-emphasis → compressor → gain → soft clip → gain → hard clip →
+ * scooped+present cab EQ → brickwall limiter. `_drive` is the gain knob.
  * The user's progression here: sawtooths+heavy shaper = "metallic/bips" →
- * pure modal string = "too acoustic" → this, modal string + real overdrive.
+ * pure modal string = "too acoustic" → modal string + mild overdrive =
+ * "not enough" → this, cascaded high-gain.
  * ---------------------------------------------------------------------- */
 
 const GuitarVoice = {
   amp: null,     // per-note graphs connect here
   master: null,
-  _level: 0.22,
-  _drive: 3.0,   // gain into the waveshaper — the "gain" knob
-  _bias: 0.22,   // clip asymmetry — adds even (tube-ish) harmonics
+  _level: 0.16,
+  _drive: 8,     // gain into the first clip stage — the main "gain" knob
   live: [],      // scheduled source nodes, tracked so a stop can silence them
 
+  // A two-stage high-gain amp: tighten the lows and boost highs into a compressor,
+  // then gain -> soft clip -> gain -> hard clip (cascaded saturation, the way a
+  // real high-gain preamp stacks stages), then a scooped/present cab EQ and a
+  // brickwall limiter. `_drive` is the gain knob; the limiter is load-bearing —
+  // without it dense passages peak well past 1 and clip.
   ensure() {
     const ctx = SFX.ensureCtx();
     if (this.amp) return ctx;
 
     const input = ctx.createGain();
 
-    // gentle compression before the gain stage — evens the pick attacks and lets
-    // notes "sing"/sustain the way an overdriven amp does
-    const comp = ctx.createDynamicsCompressor();
-    comp.threshold.value = -20; comp.knee.value = 22; comp.ratio.value = 3;
-    comp.attack.value = 0.005; comp.release.value = 0.2;
+    const tighten = ctx.createBiquadFilter();   // no flubby low end under high gain
+    tighten.type = "highpass"; tighten.frequency.value = 110;
+    const preEmph = ctx.createBiquadFilter();   // push highs into the clipper -> more aggressive
+    preEmph.type = "highshelf"; preEmph.frequency.value = 1400; preEmph.gain.value = 6;
 
-    const drive = ctx.createGain();
-    drive.gain.value = this._drive;
-    const dist = ctx.createWaveShaper();      // overdrive
-    dist.curve = this._driveCurve(this._drive, this._bias);
-    dist.oversample = "4x";
+    const comp = ctx.createDynamicsCompressor(); // even out attacks, feed the clipper a steady level -> sustain
+    comp.threshold.value = -24; comp.knee.value = 20; comp.ratio.value = 4;
+    comp.attack.value = 0.004; comp.release.value = 0.18;
 
-    const dc = ctx.createBiquadFilter();      // strip the DC the asymmetric clip adds
-    dc.type = "highpass"; dc.frequency.value = 90;
-    const lowMid = ctx.createBiquadFilter();
-    lowMid.type = "peaking"; lowMid.frequency.value = 115; lowMid.Q.value = 0.7; lowMid.gain.value = 1.5;
-    const bite = ctx.createBiquadFilter();    // upper-mid presence — crunch/bite, not a metal scoop
-    bite.type = "peaking"; bite.frequency.value = 720; bite.Q.value = 0.7; bite.gain.value = 2.5;
-    const cab = ctx.createBiquadFilter();     // speaker roll-off — keeps the fizz in check
-    cab.type = "lowpass"; cab.frequency.value = 4700; cab.Q.value = 0.7;
+    const d1 = ctx.createGain(); d1.gain.value = this._drive;
+    const s1 = ctx.createWaveShaper(); s1.curve = this._clip(2.5, 0.15); s1.oversample = "4x";
+    const mid = ctx.createBiquadFilter();       // clean up mud between the two stages
+    mid.type = "highpass"; mid.frequency.value = 150;
+    const d2 = ctx.createGain(); d2.gain.value = 3;
+    const s2 = ctx.createWaveShaper(); s2.curve = this._clip(6, 0.05); s2.oversample = "4x";
 
-    const limiter = ctx.createDynamicsCompressor(); // brickwall — power-amp squash, and it stops
-    limiter.threshold.value = -6; limiter.knee.value = 2; limiter.ratio.value = 14; // dense passages clipping
-    limiter.attack.value = 0.003; limiter.release.value = 0.15;
+    const deEmph = ctx.createBiquadFilter();    // undo the pre-emphasis + tame fizz
+    deEmph.type = "highshelf"; deEmph.frequency.value = 3200; deEmph.gain.value = -5;
+    const scoop = ctx.createBiquadFilter();
+    scoop.type = "peaking"; scoop.frequency.value = 560; scoop.Q.value = 0.8; scoop.gain.value = -4;
+    const presence = ctx.createBiquadFilter();
+    presence.type = "peaking"; presence.frequency.value = 2700; presence.Q.value = 0.8; presence.gain.value = 4;
+    const cab = ctx.createBiquadFilter();       // speaker roll-off
+    cab.type = "lowpass"; cab.frequency.value = 5000; cab.Q.value = 0.7;
+
+    const limiter = ctx.createDynamicsCompressor(); // brickwall — keeps dense passages from clipping
+    limiter.threshold.value = -6; limiter.knee.value = 2; limiter.ratio.value = 16;
+    limiter.attack.value = 0.002; limiter.release.value = 0.12;
 
     const master = ctx.createGain();
     master.gain.value = this._level;
 
-    input.connect(comp).connect(drive).connect(dist).connect(dc).connect(lowMid)
-      .connect(bite).connect(cab).connect(limiter).connect(master).connect(ctx.destination);
+    input.connect(tighten).connect(preEmph).connect(comp).connect(d1).connect(s1).connect(mid)
+      .connect(d2).connect(s2).connect(deEmph).connect(scoop).connect(presence).connect(cab)
+      .connect(limiter).connect(master).connect(ctx.destination);
 
     this.amp = input;
     this.master = master;
     return ctx;
   },
 
-  // Asymmetric soft-clip: positive half saturates harder than the negative,
-  // so it generates even harmonics (warmer, more "amp") on top of the odd ones.
-  _driveCurve(k, bias) {
+  // Asymmetric soft-clip (tanh). `bias` skews it so the positive half saturates
+  // harder — generates even harmonics on top of the odd ones for a tube-ish feel.
+  _clip(k, bias) {
     const n = 2048, c = new Float32Array(n);
     const off = Math.tanh(k * bias);
     const norm = Math.tanh(k * (1 + bias)) - off;

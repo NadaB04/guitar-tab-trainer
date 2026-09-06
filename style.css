@@ -693,3 +693,16 @@ button:active { transform: scale(0.97); }
 }
 .tuner-track.big .tuner-zone { left: 47%; width: 6%; }
 .tuner-track.big .tuner-needle { width: 6px; height: 24px; top: -4px; border-radius: 3px; }
+
+/* DEMO / "Hear it" playback mode */
+.topline-actions { display: flex; align-items: center; gap: 8px; }
+#demo-btn-gate { display: block; margin: 14px auto 0; }
+#demo-btn.playing, #demo-btn-gate.playing {
+  color: var(--green-bright);
+  border-color: var(--green-bright);
+}
+.play-surface.demo-mode .tuner { display: none; }
+.play-surface.demo-mode .target-note { text-shadow: 0 0 26px rgba(176, 108, 240, 0.55); }
+.play-surface.demo-mode .track-strip { transition: none; }
+/* target-hint carries the "note N / total" during a demo, so hide the topline copy */
+#screen-play:has(.demo-mode) #play-song-progress { visibility: hidden; }

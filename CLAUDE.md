@@ -28,7 +28,8 @@ of `PlayMode`/`Tuner` isn't the destination screen, since both share the one `Pi
   display string, e.g. `"e B G D A E"` — high-to-low, high-e lowercased, same convention as
   `stringLabel`); selection persists in `localStorage` (`activeTuningFilter`).
 - `play` — the practice screen. Has sub-states toggled by hiding/showing divs rather than
-  separate screens: `mic-gate` → `calibration-panel` → `play-surface` → `play-results`.
+  separate screens: `mic-gate` → `calibration-panel` → `play-surface` → `play-results`. The
+  `play-surface` is also reused by the `Demo` ("Hear it") mode with a `.demo-mode` class.
 - `tuner` — standalone chromatic tuner (see `Tuner` below). Has its own `mic-gate` → surface flow
   but reuses the same `PitchEngine` session if `play` already started one (no re-prompt).
 
@@ -167,6 +168,23 @@ pass had a confirmed wrong note.
   echo of each note fired the instant it's played is inherently paced to them (never runs ahead,
   silently waits out pauses since it's driven by hits, not a clock). `miss()` is filtered noise;
   `clear()` is the song-complete fanfare.
+- `GuitarVoice` — a distorted electric-guitar-ish synth voice, used only by `Demo`. Shares
+  `SFX`'s `AudioContext`. One amp chain (`pre` drive gain → `WaveShaper` soft-clip → lowpass to
+  tame fizz → highpass to cut sub-junk → `master`) is built once; every `note(freq, when, dur,
+  vel)` routes its own graph (two detuned saws + a triangle body + a noise pick-transient, through
+  a per-note lowpass that closes as it decays, under a sharp-attack/long-ring envelope) into that
+  shared chain, so overlapping notes intermodulate through the one distortion like a real amp.
+  `panic()` fades `master` and hard-stops every tracked source node.
+- `Demo` — the "Hear it" mode (buttons `#demo-btn` in the play topline, `#demo-btn-gate` on the
+  mic-gate; both call `Demo.toggle()`). Plays the loaded song through `GuitarVoice` while the tab
+  strip scrolls continuously in sync — a worked example, no mic. Reuses the strip `PlayMode`
+  already built (`notes`, `notePositions`, `chipEls`, `tailEls`). Audio is scheduled ~0.4s ahead
+  on the `AudioContext` clock (sample-accurate); the visual scroll is a `requestAnimationFrame`
+  loop reading the same clock via `_xAt(t)` (linear interpolation between note x-positions), so
+  sound and picture stay locked. Each note gets ±3¢ / ±velocity / ±10ms wobble so it doesn't sound
+  sequenced. `exit()` stops and resets the play screen via `PlayMode.load`; `stop()` is
+  teardown-only for navigation. `PlayMode.load` and `Screens.show` (leaving `play`) both call
+  `Demo.stop()`.
 - `MicDevices` — enumerates `audioinput` devices for the picker on the mic-gate screen (labels
   are blank until permission has been granted once) and remembers the last-picked device in
   `localStorage`.

@@ -612,6 +612,295 @@ const Metronome = {
 };
 
 /* ---------------------------------------------------------------------- *
+ * GuitarVoice — a distorted electric-guitar-ish synth voice, used only by
+ * Demo. Shares SFX's AudioContext. One amp chain (drive -> waveshaper ->
+ * tone/rumble filters -> master) is built once; every note routes its own
+ * oscillator + envelope + pick-transient graph into it, so overlapping
+ * notes intermodulate through the same distortion like a real amp would.
+ * ---------------------------------------------------------------------- */
+
+const GuitarVoice = {
+  amp: null,    // input node — connect per-note graphs here
+  master: null,
+  live: [],     // scheduled source nodes, tracked so a stop can silence them
+
+  ensure() {
+    const ctx = SFX.ensureCtx();
+    if (this.amp) return ctx;
+
+    const pre = ctx.createGain();
+    pre.gain.value = 5.5; // drive into the shaper
+
+    const shaper = ctx.createWaveShaper();
+    shaper.curve = this._curve(30); // "a bit" of distortion
+    shaper.oversample = "4x";
+
+    const tone = ctx.createBiquadFilter(); // tame the fizz the shaper adds up top
+    tone.type = "lowpass";
+    tone.frequency.value = 3400;
+    tone.Q.value = 0.6;
+
+    const rumble = ctx.createBiquadFilter(); // and the sub-junk it adds down low
+    rumble.type = "highpass";
+    rumble.frequency.value = 85;
+
+    const master = ctx.createGain();
+    master.gain.value = 0.14; // distortion + overlapping notes sum loud
+
+    pre.connect(shaper).connect(tone).connect(rumble).connect(master).connect(ctx.destination);
+    this.amp = pre;
+    this.master = master;
+    return ctx;
+  },
+
+  _curve(amount) {
+    const n = 1024, curve = new Float32Array(n), deg = Math.PI / 180;
+    for (let i = 0; i < n; i++) {
+      const x = (i * 2) / n - 1;
+      curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
+    }
+    return curve;
+  },
+
+  // Schedule one note at absolute AudioContext time `when`.
+  note(freq, when, dur, velocity = 1) {
+    const ctx = SFX.ctx;
+    const held = Math.max(dur || 0, 0.14);
+    const end = when + held + 0.5; // ring out past the notated length
+    const peak = 0.9 * velocity;
+    const sustain = Math.max(peak * 0.33, 0.02);
+
+    // amp envelope: sharp pick attack, quick drop to a sustain, long ring-out
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, when);
+    g.gain.linearRampToValueAtTime(peak, when + 0.005);
+    g.gain.exponentialRampToValueAtTime(sustain, when + 0.09);
+    g.gain.setValueAtTime(sustain, Math.min(when + held, end - 0.2));
+    g.gain.exponentialRampToValueAtTime(0.0001, end);
+
+    // per-note lowpass that closes as the note decays — the string going dull
+    const lp = ctx.createBiquadFilter();
+    lp.type = "lowpass";
+    lp.frequency.setValueAtTime(Math.min(freq * 9, 6500), when);
+    lp.frequency.exponentialRampToValueAtTime(Math.max(freq * 2, 480), end);
+    lp.Q.value = 0.4;
+    lp.connect(g).connect(this.amp);
+
+    for (const det of [-6, 5]) { // two slightly detuned saws for thickness
+      const o = ctx.createOscillator();
+      o.type = "sawtooth";
+      o.frequency.value = freq;
+      o.detune.value = det + (Math.random() * 5 - 2.5);
+      o.connect(lp);
+      o.start(when);
+      o.stop(end + 0.03);
+      this.live.push(o);
+    }
+    const bd = ctx.createOscillator(); // triangle body under the saws
+    bd.type = "triangle";
+    bd.frequency.value = freq;
+    const bg = ctx.createGain();
+    bg.gain.value = 0.55;
+    bd.connect(bg).connect(lp);
+    bd.start(when);
+    bd.stop(end + 0.03);
+    this.live.push(bd);
+
+    // pick transient — short filtered noise burst
+    const len = Math.floor(ctx.sampleRate * 0.028);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    const nb = ctx.createBufferSource();
+    nb.buffer = buf;
+    const nf = ctx.createBiquadFilter();
+    nf.type = "bandpass";
+    nf.frequency.value = Math.min(freq * 3.2, 3200);
+    const ng = ctx.createGain();
+    ng.gain.value = 0.2 * velocity;
+    nb.connect(nf).connect(ng).connect(this.amp);
+    nb.start(when);
+    this.live.push(nb);
+
+    if (this.live.length > 400) this.live = this.live.slice(-200); // prune old refs
+  },
+
+  // Fade the amp and hard-stop every scheduled node — used when a demo is stopped.
+  panic() {
+    const ctx = SFX.ctx;
+    if (!ctx || !this.master) { this.live = []; return; }
+    const now = ctx.currentTime;
+    this.master.gain.cancelScheduledValues(now);
+    this.master.gain.setValueAtTime(this.master.gain.value, now);
+    this.master.gain.linearRampToValueAtTime(0.0001, now + 0.06);
+    for (const n of this.live) { try { n.stop(now + 0.09); } catch (e) { /* already stopped */ } }
+    this.live = [];
+    this.master.gain.setValueAtTime(0.14, now + 0.13); // restore for the next demo
+  },
+};
+
+/* ---------------------------------------------------------------------- *
+ * Demo — "Hear it": plays the loaded song through GuitarVoice while the
+ * tab strip scrolls continuously in sync, so the player gets a worked
+ * example. Reuses the strip that PlayMode already built (notes,
+ * notePositions, chipEls, tailEls). No mic involved.
+ *
+ * Audio is scheduled a short way ahead on the AudioContext clock (sample-
+ * accurate); the visual scroll is a rAF loop reading the same clock, so
+ * sound and picture stay locked. Notes get small random timing/pitch/
+ * velocity wobble so it doesn't sound like a sequencer.
+ * ---------------------------------------------------------------------- */
+
+const Demo = {
+  running: false,
+  rafId: null,
+  notes: null,
+  positions: null,
+  song: null,
+  audioStart: 0,
+  nextIdx: 0,   // next note to schedule for audio
+  shownIdx: -1, // last note index reflected in the strip highlight
+
+  toggle() {
+    if (this.running) this.exit();
+    else this.start();
+  },
+
+  start() {
+    if (!PlayMode.notes || !PlayMode.notes.length) return;
+    if (this.running) this.stopInternal();
+
+    this.notes = PlayMode.notes;
+    this.positions = PlayMode.notePositions;
+    this.song = PlayMode.song;
+    const ctx = GuitarVoice.ensure();
+
+    PlayMode.stop(); // pause mic listening / metronome if they were active
+    document.getElementById("mic-gate").classList.add("hidden");
+    document.getElementById("calibration-panel").classList.add("hidden");
+    document.getElementById("listening-tools").classList.add("hidden");
+    document.getElementById("play-results").classList.add("hidden");
+    const surface = document.getElementById("play-surface");
+    surface.classList.remove("hidden");
+    surface.classList.add("demo-mode");
+    document.getElementById("combo-badge").classList.add("hidden");
+    document.querySelector(".target-label").textContent = "Now playing — listen & watch";
+    for (const b of this._btns()) { b.textContent = "⏹ Stop"; b.classList.add("playing"); }
+
+    for (let i = 0; i < this.notes.length; i++) this._setChip(i, "upcoming");
+
+    this.running = true;
+    this.nextIdx = 0;
+    this.shownIdx = -1;
+    this.audioStart = ctx.currentTime + 0.3; // lead-in before the first note
+    this._loop();
+  },
+
+  _btns() {
+    return [document.getElementById("demo-btn"), document.getElementById("demo-btn-gate")];
+  },
+
+  _loop() {
+    if (!this.running) return;
+    const ctx = SFX.ctx;
+    const t = ctx.currentTime - this.audioStart; // song time in seconds (negative during lead-in)
+
+    // schedule audio ~0.4s ahead of the clock
+    while (this.nextIdx < this.notes.length && (this.notes[this.nextIdx].time || 0) < t + 0.4) {
+      const n = this.notes[this.nextIdx];
+      const freq = noteFrequency(n.string, n.fret, this.song.tuningOffsets)
+        * Math.pow(2, (Math.random() * 6 - 3) / 1200); // ±3¢ so it isn't sterile
+      const jitter = Math.random() * 0.026 - 0.01;     // loose timing
+      const vel = 0.72 + Math.random() * 0.28;
+      const when = Math.max(ctx.currentTime + 0.02, this.audioStart + (n.time || 0) + jitter);
+      GuitarVoice.note(freq, when, n.duration || 0.2, vel);
+      this.nextIdx++;
+    }
+
+    // continuous scroll
+    document.getElementById("track-strip").style.transform =
+      `translateX(${PLAYHEAD_X - this._xAt(t)}px)`;
+
+    // highlight progress (forward-only)
+    let cur = -1;
+    for (let i = 0; i < this.notes.length; i++) {
+      if ((this.notes[i].time || 0) <= t + 0.015) cur = i; else break;
+    }
+    if (cur !== this.shownIdx) {
+      for (let i = Math.max(0, this.shownIdx); i <= cur; i++) {
+        this._setChip(i, i < cur ? "played" : "current", i === cur);
+      }
+      if (cur >= 0) {
+        const n = this.notes[cur];
+        const f = noteFrequency(n.string, n.fret, this.song.tuningOffsets);
+        document.getElementById("target-note").textContent =
+          `${stringLabel(this.song, n.string).toUpperCase()} — fret ${n.fret}`;
+        document.getElementById("target-hint").textContent =
+          `${freqToNoteName(f)} · note ${cur + 1} / ${this.notes.length}`;
+      }
+      this.shownIdx = cur;
+    }
+
+    const last = this.notes[this.notes.length - 1];
+    if (t > (last.time || 0) + (last.duration || 0) + 1.4) { this.exit(); return; }
+
+    this.rafId = requestAnimationFrame(() => this._loop());
+  },
+
+  _setChip(i, state, flash) {
+    const cls = state === "played" ? "played-correct" : state === "current" ? "current" : "upcoming";
+    for (const el of [PlayMode.chipEls[i], PlayMode.tailEls[i]]) {
+      if (!el) continue;
+      el.classList.remove("played-correct", "played-wrong", "current", "upcoming", "match-flash");
+      el.classList.add(cls);
+    }
+    if (flash && PlayMode.chipEls[i]) {
+      void PlayMode.chipEls[i].offsetWidth;
+      PlayMode.chipEls[i].classList.add("match-flash");
+    }
+  },
+
+  // Interpolated x-position of the playhead time within the strip's note positions.
+  _xAt(t) {
+    const notes = this.notes, pos = this.positions, PPS = PIXELS_PER_SECOND;
+    const t0 = notes[0].time || 0;
+    if (t <= t0) return (pos[0].x - t0 * PPS) + t * PPS; // linear pre-roll
+    let i = 0;
+    for (let k = 0; k < notes.length; k++) { if ((notes[k].time || 0) <= t) i = k; else break; }
+    if (i >= notes.length - 1) return pos[i].x + (t - (notes[i].time || 0)) * PPS;
+    const ti = notes[i].time || 0, tj = notes[i + 1].time || 0;
+    if (tj <= ti) return pos[i].x;
+    return pos[i].x + (pos[i + 1].x - pos[i].x) * ((t - ti) / (tj - ti));
+  },
+
+  stopInternal() {
+    this.running = false;
+    if (this.rafId) cancelAnimationFrame(this.rafId);
+    this.rafId = null;
+    GuitarVoice.panic();
+    document.getElementById("play-surface").classList.remove("demo-mode");
+    document.querySelector(".target-label").textContent = "Play this note";
+    for (const b of this._btns()) {
+      b.textContent = b.id === "demo-btn" ? "🎧 Hear it" : "🎧 Hear an example first";
+      b.classList.remove("playing");
+    }
+  },
+
+  // Stop and put the play screen back to its starting state (mic-gate, or the
+  // practice surface if the mic is already running).
+  exit() {
+    const wasRunning = this.running;
+    this.stopInternal();
+    if (wasRunning && PlayMode.song) PlayMode.load(PlayMode.songId, PlayMode.song);
+  },
+
+  // Teardown only — for navigation away, where the screen is changing anyway.
+  stop() {
+    if (this.running || this.rafId) this.stopInternal();
+  },
+};
+
+/* ---------------------------------------------------------------------- *
  * Screens
  * ---------------------------------------------------------------------- */
 
@@ -619,7 +908,7 @@ const Screens = {
   show(id) {
     document.querySelectorAll(".screen").forEach((el) => el.classList.remove("active"));
     document.getElementById(`screen-${id}`).classList.add("active");
-    if (id !== "play") PlayMode.stop();
+    if (id !== "play") { PlayMode.stop(); Demo.stop(); }
     if (id !== "tuner") Tuner.stop();
     else Tuner.enter();
   },
@@ -748,6 +1037,7 @@ const PlayMode = {
   bestCombo: 0,
 
   load(songId, song) {
+    Demo.stop();
     this.songId = songId;
     this.song = song;
     this.notes = song.notes;
@@ -794,6 +1084,7 @@ const PlayMode = {
   },
 
   async beginListening() {
+    Demo.stop();
     const deviceId = MicDevices.selectedId();
     try {
       await PitchEngine.start(null, deviceId);
@@ -1195,6 +1486,9 @@ document.getElementById("play-back-btn").addEventListener("click", () => { Scree
 document.getElementById("play-menu-btn").addEventListener("click", () => { Screens.show("menu"); renderSongList(); });
 document.getElementById("play-restart-btn").addEventListener("click", () => PlayMode.load(PlayMode.songId, PlayMode.song));
 document.getElementById("play-replay-btn").addEventListener("click", () => PlayMode.load(PlayMode.songId, PlayMode.song));
+
+document.getElementById("demo-btn").addEventListener("click", () => Demo.toggle());
+document.getElementById("demo-btn-gate").addEventListener("click", () => Demo.toggle());
 
 document.getElementById("nav-tuner-btn").addEventListener("click", () => Screens.show("tuner"));
 document.getElementById("tuner-back-btn").addEventListener("click", () => Screens.show("menu"));

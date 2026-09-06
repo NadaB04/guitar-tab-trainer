@@ -171,14 +171,16 @@ pass had a confirmed wrong note.
 - `GuitarVoice` — a plucked electric-guitar voice, used only by `Demo`. Shares `SFX`'s
   `AudioContext`. Each `note(freq, when, dur, vel)` is a **modal string model**, not a raw
   oscillator: a stack of sine partials at n×f (stretched slightly sharp by `stiffness`, an
-  inharmonicity term), each with its own decay (the fundamental rings ~1.5 s, harmonics die
+  inharmonicity term), each with its own decay (the fundamental rings ~2.5 s, harmonics die
   progressively faster), scaled by a pluck-position comb `|sin(nπ·pluckPos)|`, plus a ~22 ms
-  band-passed noise pick-attack. That feeds one shared amp chain, built once: light `tanh`
-  soft-clip (`_softClip`, warmth not fuzz) → highpass → low-mid bump → body peak → presence
-  scoop → ~4.8 kHz "cabinet" lowpass → `master`. The earlier version was two detuned saws through
-  a heavy `WaveShaper` and the user said it sounded "metallic / like bips" — hence the rebuild;
-  keep it warm, keep distortion minimal. `panic()` fades `master` and hard-stops every tracked
-  node.
+  band-passed noise pick-attack. That feeds one shared "amp", built once: compressor → `_drive`
+  gain → **asymmetric waveshaper overdrive** (`_driveCurve(_drive, _bias)` — `_drive` is the gain
+  knob, `_bias` the clip asymmetry / even-harmonic character) → highpass (kills the DC the
+  asymmetry adds) → low-mid bump → upper-mid "bite" → ~4.7 kHz cabinet lowpass → **brickwall
+  limiter** → `master` (`_level`). The limiter is load-bearing: without it dense passages peak
+  ~2.2 and clip hard. Tone history: two detuned saws + heavy shaper = "metallic / like bips" →
+  pure modal string, minimal clip = "too acoustic" → this, modal string + real overdrive.
+  `panic()` fades `master` and hard-stops every tracked node.
 - `Demo` — the "Hear it" mode (buttons `#demo-btn` in the play topline, `#demo-btn-gate` on the
   mic-gate; both call `Demo.toggle()`). Plays the loaded song through `GuitarVoice` while the tab
   strip scrolls continuously in sync — a worked example, no mic. Reuses the strip `PlayMode`

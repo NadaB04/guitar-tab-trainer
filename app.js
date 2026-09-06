@@ -618,16 +618,22 @@ const Metronome = {
  * Each note is a *modal* string model rather than a raw oscillator: a stack
  * of sine partials at n×f (slightly stretched by string stiffness), each
  * with its own decay (highs die fast, the fundamental rings), scaled by a
- * pluck-position comb, plus a short filtered-noise pick attack. That stack
- * feeds one shared amp chain — a light tanh soft-clip for warmth (not fuzz)
- * then a guitar-body/cabinet EQ (low-mid bump, presence scoop, ~5 kHz
- * roll-off) — built once, so overlapping notes blend through it like an amp.
+ * pluck-position comb, plus a short filtered-noise pick attack.
+ *
+ * That stack feeds one shared "amp", built once: a light compressor → gain
+ * → asymmetric waveshaper overdrive (`_drive`/`_bias` are the gain/character
+ * knobs) → an amp voicing EQ (low-mid bump, upper-mid bite, ~4.7 kHz cab
+ * roll-off). Overlapping notes crunch through it together like a real amp.
+ * The user's progression here: sawtooths+heavy shaper = "metallic/bips" →
+ * pure modal string = "too acoustic" → this, modal string + real overdrive.
  * ---------------------------------------------------------------------- */
 
 const GuitarVoice = {
   amp: null,     // per-note graphs connect here
   master: null,
-  _level: 0.5,
+  _level: 0.22,
+  _drive: 3.0,   // gain into the waveshaper — the "gain" knob
+  _bias: 0.22,   // clip asymmetry — adds even (tube-ish) harmonics
   live: [],      // scheduled source nodes, tracked so a stop can silence them
 
   ensure() {
@@ -636,39 +642,51 @@ const GuitarVoice = {
 
     const input = ctx.createGain();
 
-    const drive = ctx.createGain();
-    drive.gain.value = 1.7;
-    const warmth = ctx.createWaveShaper();  // gentle tube-ish rounding, not distortion
-    warmth.curve = this._softClip(1.7);
-    warmth.oversample = "2x";
+    // gentle compression before the gain stage — evens the pick attacks and lets
+    // notes "sing"/sustain the way an overdriven amp does
+    const comp = ctx.createDynamicsCompressor();
+    comp.threshold.value = -20; comp.knee.value = 22; comp.ratio.value = 3;
+    comp.attack.value = 0.005; comp.release.value = 0.2;
 
-    const hp = ctx.createBiquadFilter();
-    hp.type = "highpass"; hp.frequency.value = 78;
+    const drive = ctx.createGain();
+    drive.gain.value = this._drive;
+    const dist = ctx.createWaveShaper();      // overdrive
+    dist.curve = this._driveCurve(this._drive, this._bias);
+    dist.oversample = "4x";
+
+    const dc = ctx.createBiquadFilter();      // strip the DC the asymmetric clip adds
+    dc.type = "highpass"; dc.frequency.value = 90;
     const lowMid = ctx.createBiquadFilter();
-    lowMid.type = "peaking"; lowMid.frequency.value = 120; lowMid.Q.value = 0.7; lowMid.gain.value = 3.5;
-    const body = ctx.createBiquadFilter();
-    body.type = "peaking"; body.frequency.value = 250; body.Q.value = 0.8; body.gain.value = 2;
-    const scoop = ctx.createBiquadFilter();
-    scoop.type = "peaking"; scoop.frequency.value = 850; scoop.Q.value = 0.7; scoop.gain.value = -3.5;
-    const cab = ctx.createBiquadFilter();  // speaker roll-off — kills the "fizz/beep"
-    cab.type = "lowpass"; cab.frequency.value = 4800; cab.Q.value = 0.6;
+    lowMid.type = "peaking"; lowMid.frequency.value = 115; lowMid.Q.value = 0.7; lowMid.gain.value = 1.5;
+    const bite = ctx.createBiquadFilter();    // upper-mid presence — crunch/bite, not a metal scoop
+    bite.type = "peaking"; bite.frequency.value = 720; bite.Q.value = 0.7; bite.gain.value = 2.5;
+    const cab = ctx.createBiquadFilter();     // speaker roll-off — keeps the fizz in check
+    cab.type = "lowpass"; cab.frequency.value = 4700; cab.Q.value = 0.7;
+
+    const limiter = ctx.createDynamicsCompressor(); // brickwall — power-amp squash, and it stops
+    limiter.threshold.value = -6; limiter.knee.value = 2; limiter.ratio.value = 14; // dense passages clipping
+    limiter.attack.value = 0.003; limiter.release.value = 0.15;
 
     const master = ctx.createGain();
     master.gain.value = this._level;
 
-    input.connect(drive).connect(warmth).connect(hp).connect(lowMid)
-      .connect(body).connect(scoop).connect(cab).connect(master).connect(ctx.destination);
+    input.connect(comp).connect(drive).connect(dist).connect(dc).connect(lowMid)
+      .connect(bite).connect(cab).connect(limiter).connect(master).connect(ctx.destination);
 
     this.amp = input;
     this.master = master;
     return ctx;
   },
 
-  _softClip(k) {
-    const n = 1024, c = new Float32Array(n), norm = Math.tanh(k);
+  // Asymmetric soft-clip: positive half saturates harder than the negative,
+  // so it generates even harmonics (warmer, more "amp") on top of the odd ones.
+  _driveCurve(k, bias) {
+    const n = 2048, c = new Float32Array(n);
+    const off = Math.tanh(k * bias);
+    const norm = Math.tanh(k * (1 + bias)) - off;
     for (let i = 0; i < n; i++) {
       const x = (i / (n - 1)) * 2 - 1;
-      c[i] = Math.tanh(k * x) / norm;
+      c[i] = (Math.tanh(k * (x + bias)) - off) / norm;
     }
     return c;
   },
@@ -677,25 +695,26 @@ const GuitarVoice = {
   note(freq, when, dur, velocity = 1) {
     const ctx = SFX.ctx;
     const held = Math.max(dur || 0, 0.11);
-    const peak = 0.14 * (0.7 + 0.3 * velocity);
-    const pluckPos = 0.11 + Math.random() * 0.06;   // fraction along the string — near the bridge, brighter
+    const peak = 0.13 * (0.7 + 0.3 * velocity);
+    const pluckPos = 0.1 + Math.random() * 0.06;     // fraction along the string — near the bridge, brighter
     const stiffness = 0.0004;                        // inharmonicity: partials creep sharp of n×f
-    const baseDecay = 1.4 + Math.random() * 0.5;     // fundamental ring time (s)
+    const baseDecay = 2.2 + Math.random() * 0.6;     // fundamental ring time (s) — electric sustains
 
     // after the notated length, ease everything down so dense passages don't turn to mud
     const rel = ctx.createGain();
     rel.gain.setValueAtTime(1, when);
     rel.gain.setValueAtTime(1, when + held);
-    rel.gain.setTargetAtTime(0.22, when + held, 0.16);
+    rel.gain.setTargetAtTime(0.32, when + held, 0.18);
     rel.connect(this.amp);
 
     const maxN = Math.min(14, Math.floor(6500 / freq));
     for (let n = 1; n <= maxN; n++) {
       const pf = freq * n * Math.sqrt(1 + stiffness * n * n);
       if (pf > 7200) break;
-      const amp = Math.abs(Math.sin(n * Math.PI * pluckPos)) / Math.pow(n, 1.15);
+      // flatter harmonic rolloff than an acoustic — more high-partial energy for the drive to chew on
+      const amp = Math.abs(Math.sin(n * Math.PI * pluckPos)) / Math.pow(n, 1.0);
       if (amp < 0.003) continue;
-      const decay = Math.max(0.12, baseDecay / (1 + (n - 1) * 0.6));
+      const decay = Math.max(0.14, baseDecay / (1 + (n - 1) * 0.42));
 
       const o = ctx.createOscillator();
       o.type = "sine";

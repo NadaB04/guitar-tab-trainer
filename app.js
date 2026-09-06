@@ -612,117 +612,126 @@ const Metronome = {
 };
 
 /* ---------------------------------------------------------------------- *
- * GuitarVoice — a distorted electric-guitar-ish synth voice, used only by
- * Demo. Shares SFX's AudioContext. One amp chain (drive -> waveshaper ->
- * tone/rumble filters -> master) is built once; every note routes its own
- * oscillator + envelope + pick-transient graph into it, so overlapping
- * notes intermodulate through the same distortion like a real amp would.
+ * GuitarVoice — a plucked electric-guitar voice, used only by Demo. Shares
+ * SFX's AudioContext.
+ *
+ * Each note is a *modal* string model rather than a raw oscillator: a stack
+ * of sine partials at n×f (slightly stretched by string stiffness), each
+ * with its own decay (highs die fast, the fundamental rings), scaled by a
+ * pluck-position comb, plus a short filtered-noise pick attack. That stack
+ * feeds one shared amp chain — a light tanh soft-clip for warmth (not fuzz)
+ * then a guitar-body/cabinet EQ (low-mid bump, presence scoop, ~5 kHz
+ * roll-off) — built once, so overlapping notes blend through it like an amp.
  * ---------------------------------------------------------------------- */
 
 const GuitarVoice = {
-  amp: null,    // input node — connect per-note graphs here
+  amp: null,     // per-note graphs connect here
   master: null,
-  live: [],     // scheduled source nodes, tracked so a stop can silence them
+  _level: 0.5,
+  live: [],      // scheduled source nodes, tracked so a stop can silence them
 
   ensure() {
     const ctx = SFX.ensureCtx();
     if (this.amp) return ctx;
 
-    const pre = ctx.createGain();
-    pre.gain.value = 5.5; // drive into the shaper
+    const input = ctx.createGain();
 
-    const shaper = ctx.createWaveShaper();
-    shaper.curve = this._curve(30); // "a bit" of distortion
-    shaper.oversample = "4x";
+    const drive = ctx.createGain();
+    drive.gain.value = 1.7;
+    const warmth = ctx.createWaveShaper();  // gentle tube-ish rounding, not distortion
+    warmth.curve = this._softClip(1.7);
+    warmth.oversample = "2x";
 
-    const tone = ctx.createBiquadFilter(); // tame the fizz the shaper adds up top
-    tone.type = "lowpass";
-    tone.frequency.value = 3400;
-    tone.Q.value = 0.6;
-
-    const rumble = ctx.createBiquadFilter(); // and the sub-junk it adds down low
-    rumble.type = "highpass";
-    rumble.frequency.value = 85;
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass"; hp.frequency.value = 78;
+    const lowMid = ctx.createBiquadFilter();
+    lowMid.type = "peaking"; lowMid.frequency.value = 120; lowMid.Q.value = 0.7; lowMid.gain.value = 3.5;
+    const body = ctx.createBiquadFilter();
+    body.type = "peaking"; body.frequency.value = 250; body.Q.value = 0.8; body.gain.value = 2;
+    const scoop = ctx.createBiquadFilter();
+    scoop.type = "peaking"; scoop.frequency.value = 850; scoop.Q.value = 0.7; scoop.gain.value = -3.5;
+    const cab = ctx.createBiquadFilter();  // speaker roll-off — kills the "fizz/beep"
+    cab.type = "lowpass"; cab.frequency.value = 4800; cab.Q.value = 0.6;
 
     const master = ctx.createGain();
-    master.gain.value = 0.14; // distortion + overlapping notes sum loud
+    master.gain.value = this._level;
 
-    pre.connect(shaper).connect(tone).connect(rumble).connect(master).connect(ctx.destination);
-    this.amp = pre;
+    input.connect(drive).connect(warmth).connect(hp).connect(lowMid)
+      .connect(body).connect(scoop).connect(cab).connect(master).connect(ctx.destination);
+
+    this.amp = input;
     this.master = master;
     return ctx;
   },
 
-  _curve(amount) {
-    const n = 1024, curve = new Float32Array(n), deg = Math.PI / 180;
+  _softClip(k) {
+    const n = 1024, c = new Float32Array(n), norm = Math.tanh(k);
     for (let i = 0; i < n; i++) {
-      const x = (i * 2) / n - 1;
-      curve[i] = ((3 + amount) * x * 20 * deg) / (Math.PI + amount * Math.abs(x));
+      const x = (i / (n - 1)) * 2 - 1;
+      c[i] = Math.tanh(k * x) / norm;
     }
-    return curve;
+    return c;
   },
 
-  // Schedule one note at absolute AudioContext time `when`.
+  // Schedule one plucked note at absolute AudioContext time `when`.
   note(freq, when, dur, velocity = 1) {
     const ctx = SFX.ctx;
-    const held = Math.max(dur || 0, 0.14);
-    const end = when + held + 0.5; // ring out past the notated length
-    const peak = 0.9 * velocity;
-    const sustain = Math.max(peak * 0.33, 0.02);
+    const held = Math.max(dur || 0, 0.11);
+    const peak = 0.14 * (0.7 + 0.3 * velocity);
+    const pluckPos = 0.11 + Math.random() * 0.06;   // fraction along the string — near the bridge, brighter
+    const stiffness = 0.0004;                        // inharmonicity: partials creep sharp of n×f
+    const baseDecay = 1.4 + Math.random() * 0.5;     // fundamental ring time (s)
 
-    // amp envelope: sharp pick attack, quick drop to a sustain, long ring-out
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, when);
-    g.gain.linearRampToValueAtTime(peak, when + 0.005);
-    g.gain.exponentialRampToValueAtTime(sustain, when + 0.09);
-    g.gain.setValueAtTime(sustain, Math.min(when + held, end - 0.2));
-    g.gain.exponentialRampToValueAtTime(0.0001, end);
+    // after the notated length, ease everything down so dense passages don't turn to mud
+    const rel = ctx.createGain();
+    rel.gain.setValueAtTime(1, when);
+    rel.gain.setValueAtTime(1, when + held);
+    rel.gain.setTargetAtTime(0.22, when + held, 0.16);
+    rel.connect(this.amp);
 
-    // per-note lowpass that closes as the note decays — the string going dull
-    const lp = ctx.createBiquadFilter();
-    lp.type = "lowpass";
-    lp.frequency.setValueAtTime(Math.min(freq * 9, 6500), when);
-    lp.frequency.exponentialRampToValueAtTime(Math.max(freq * 2, 480), end);
-    lp.Q.value = 0.4;
-    lp.connect(g).connect(this.amp);
+    const maxN = Math.min(14, Math.floor(6500 / freq));
+    for (let n = 1; n <= maxN; n++) {
+      const pf = freq * n * Math.sqrt(1 + stiffness * n * n);
+      if (pf > 7200) break;
+      const amp = Math.abs(Math.sin(n * Math.PI * pluckPos)) / Math.pow(n, 1.15);
+      if (amp < 0.003) continue;
+      const decay = Math.max(0.12, baseDecay / (1 + (n - 1) * 0.6));
 
-    for (const det of [-6, 5]) { // two slightly detuned saws for thickness
       const o = ctx.createOscillator();
-      o.type = "sawtooth";
-      o.frequency.value = freq;
-      o.detune.value = det + (Math.random() * 5 - 2.5);
-      o.connect(lp);
+      o.type = "sine";
+      o.frequency.value = pf;
+      o.detune.value = Math.random() * 5 - 2.5;
+
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, when);
+      g.gain.linearRampToValueAtTime(amp * peak, when + 0.004);
+      g.gain.exponentialRampToValueAtTime(Math.max(amp * peak * 0.0008, 1e-5), when + decay);
+
+      o.connect(g).connect(rel);
+      const stopAt = when + Math.min(decay, held + 1) + 0.05;
       o.start(when);
-      o.stop(end + 0.03);
+      o.stop(stopAt);
       this.live.push(o);
     }
-    const bd = ctx.createOscillator(); // triangle body under the saws
-    bd.type = "triangle";
-    bd.frequency.value = freq;
-    const bg = ctx.createGain();
-    bg.gain.value = 0.55;
-    bd.connect(bg).connect(lp);
-    bd.start(when);
-    bd.stop(end + 0.03);
-    this.live.push(bd);
 
-    // pick transient — short filtered noise burst
-    const len = Math.floor(ctx.sampleRate * 0.028);
+    // pick attack — short filtered noise "chk"
+    const len = Math.floor(ctx.sampleRate * 0.022);
     const buf = ctx.createBuffer(1, len, ctx.sampleRate);
     const d = buf.getChannelData(0);
-    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2);
     const nb = ctx.createBufferSource();
     nb.buffer = buf;
     const nf = ctx.createBiquadFilter();
     nf.type = "bandpass";
-    nf.frequency.value = Math.min(freq * 3.2, 3200);
+    nf.frequency.value = Math.min(Math.max(freq * 4, 1400), 3000);
+    nf.Q.value = 0.7;
     const ng = ctx.createGain();
-    ng.gain.value = 0.2 * velocity;
-    nb.connect(nf).connect(ng).connect(this.amp);
+    ng.gain.value = 0.08 * (0.6 + 0.4 * velocity);
+    nb.connect(nf).connect(ng).connect(rel);
     nb.start(when);
     this.live.push(nb);
 
-    if (this.live.length > 400) this.live = this.live.slice(-200); // prune old refs
+    if (this.live.length > 600) this.live = this.live.slice(-320); // prune old refs
   },
 
   // Fade the amp and hard-stop every scheduled node — used when a demo is stopped.
@@ -735,7 +744,7 @@ const GuitarVoice = {
     this.master.gain.linearRampToValueAtTime(0.0001, now + 0.06);
     for (const n of this.live) { try { n.stop(now + 0.09); } catch (e) { /* already stopped */ } }
     this.live = [];
-    this.master.gain.setValueAtTime(0.14, now + 0.13); // restore for the next demo
+    this.master.gain.setValueAtTime(this._level, now + 0.13); // restore for the next demo
   },
 };
 
@@ -754,12 +763,16 @@ const GuitarVoice = {
 const Demo = {
   running: false,
   rafId: null,
+  metroTimer: null,
   notes: null,
   positions: null,
+  playTimes: null, // notes[i].time re-scaled to the chosen playback tempo (seconds)
   song: null,
+  rate: 1,         // chosen BPM / song BPM
   audioStart: 0,
-  nextIdx: 0,   // next note to schedule for audio
-  shownIdx: -1, // last note index reflected in the strip highlight
+  nextIdx: 0,      // next note to schedule for audio
+  shownIdx: -1,    // last note index reflected in the strip highlight
+  LEAD_IN: 0.4,
 
   toggle() {
     if (this.running) this.exit();
@@ -776,9 +789,15 @@ const Demo = {
     const ctx = GuitarVoice.ensure();
 
     PlayMode.stop(); // pause mic listening / metronome if they were active
+
+    // Play at whatever tempo the BPM select shows; the metronome clicks along with it.
+    const bpm = Number(document.getElementById("metronome-bpm").value) || this.song.bpm || 120;
+    this.rate = bpm / (this.song.bpm || bpm);
+    this.playTimes = this.notes.map((n) => (n.time || 0) / this.rate);
+
     document.getElementById("mic-gate").classList.add("hidden");
     document.getElementById("calibration-panel").classList.add("hidden");
-    document.getElementById("listening-tools").classList.add("hidden");
+    document.getElementById("listening-tools").classList.remove("hidden"); // keep the BPM select reachable
     document.getElementById("play-results").classList.add("hidden");
     const surface = document.getElementById("play-surface");
     surface.classList.remove("hidden");
@@ -792,7 +811,17 @@ const Demo = {
     this.running = true;
     this.nextIdx = 0;
     this.shownIdx = -1;
-    this.audioStart = ctx.currentTime + 0.3; // lead-in before the first note
+    this.audioStart = ctx.currentTime + this.LEAD_IN;
+
+    // start the click on the first beat (end of the lead-in), so it lines up with the notes
+    const metroBtn = document.getElementById("metronome-toggle");
+    this.metroTimer = setTimeout(() => {
+      if (!this.running) return;
+      Metronome.start(bpm);
+      metroBtn.textContent = "🥁 Metronome: On";
+      metroBtn.classList.add("active");
+    }, this.LEAD_IN * 1000);
+
     this._loop();
   },
 
@@ -803,17 +832,17 @@ const Demo = {
   _loop() {
     if (!this.running) return;
     const ctx = SFX.ctx;
-    const t = ctx.currentTime - this.audioStart; // song time in seconds (negative during lead-in)
+    const t = ctx.currentTime - this.audioStart; // seconds since the first note (negative during lead-in)
 
     // schedule audio ~0.4s ahead of the clock
-    while (this.nextIdx < this.notes.length && (this.notes[this.nextIdx].time || 0) < t + 0.4) {
+    while (this.nextIdx < this.notes.length && this.playTimes[this.nextIdx] < t + 0.4) {
       const n = this.notes[this.nextIdx];
       const freq = noteFrequency(n.string, n.fret, this.song.tuningOffsets)
         * Math.pow(2, (Math.random() * 6 - 3) / 1200); // ±3¢ so it isn't sterile
       const jitter = Math.random() * 0.026 - 0.01;     // loose timing
       const vel = 0.72 + Math.random() * 0.28;
-      const when = Math.max(ctx.currentTime + 0.02, this.audioStart + (n.time || 0) + jitter);
-      GuitarVoice.note(freq, when, n.duration || 0.2, vel);
+      const when = Math.max(ctx.currentTime + 0.02, this.audioStart + this.playTimes[this.nextIdx] + jitter);
+      GuitarVoice.note(freq, when, (n.duration || 0.2) / this.rate, vel);
       this.nextIdx++;
     }
 
@@ -824,7 +853,7 @@ const Demo = {
     // highlight progress (forward-only)
     let cur = -1;
     for (let i = 0; i < this.notes.length; i++) {
-      if ((this.notes[i].time || 0) <= t + 0.015) cur = i; else break;
+      if (this.playTimes[i] <= t + 0.015) cur = i; else break;
     }
     if (cur !== this.shownIdx) {
       for (let i = Math.max(0, this.shownIdx); i <= cur; i++) {
@@ -841,8 +870,11 @@ const Demo = {
       this.shownIdx = cur;
     }
 
-    const last = this.notes[this.notes.length - 1];
-    if (t > (last.time || 0) + (last.duration || 0) + 1.4) { this.exit(); return; }
+    if (t > this.playTimes[this.playTimes.length - 1] +
+        (this.notes[this.notes.length - 1].duration || 0) / this.rate + 1.4) {
+      this.exit();
+      return;
+    }
 
     this.rafId = requestAnimationFrame(() => this._loop());
   },
@@ -860,23 +892,28 @@ const Demo = {
     }
   },
 
-  // Interpolated x-position of the playhead time within the strip's note positions.
+  // Interpolated x-position for playhead time `t` (seconds since the first note). The strip's
+  // pixel layout is fixed; a faster tempo just traverses it faster. `pt` = scaled note times.
   _xAt(t) {
-    const notes = this.notes, pos = this.positions, PPS = PIXELS_PER_SECOND;
-    const t0 = notes[0].time || 0;
-    if (t <= t0) return (pos[0].x - t0 * PPS) + t * PPS; // linear pre-roll
+    const pt = this.playTimes, pos = this.positions;
+    const speed = PIXELS_PER_SECOND * this.rate; // px per real second at this tempo
+    if (t <= pt[0]) return (pos[0].x - pt[0] * speed) + t * speed; // linear pre-roll
     let i = 0;
-    for (let k = 0; k < notes.length; k++) { if ((notes[k].time || 0) <= t) i = k; else break; }
-    if (i >= notes.length - 1) return pos[i].x + (t - (notes[i].time || 0)) * PPS;
-    const ti = notes[i].time || 0, tj = notes[i + 1].time || 0;
-    if (tj <= ti) return pos[i].x;
-    return pos[i].x + (pos[i + 1].x - pos[i].x) * ((t - ti) / (tj - ti));
+    for (let k = 0; k < pt.length; k++) { if (pt[k] <= t) i = k; else break; }
+    if (i >= pt.length - 1) return pos[i].x + (t - pt[i]) * speed;
+    if (pt[i + 1] <= pt[i]) return pos[i].x;
+    return pos[i].x + (pos[i + 1].x - pos[i].x) * ((t - pt[i]) / (pt[i + 1] - pt[i]));
   },
 
   stopInternal() {
     this.running = false;
     if (this.rafId) cancelAnimationFrame(this.rafId);
     this.rafId = null;
+    if (this.metroTimer) { clearTimeout(this.metroTimer); this.metroTimer = null; }
+    Metronome.stop();
+    const metroBtn = document.getElementById("metronome-toggle");
+    metroBtn.textContent = "🥁 Metronome: Off";
+    metroBtn.classList.remove("active");
     GuitarVoice.panic();
     document.getElementById("play-surface").classList.remove("demo-mode");
     document.querySelector(".target-label").textContent = "Play this note";
@@ -1481,6 +1518,7 @@ document.getElementById("metronome-toggle").addEventListener("click", () => {
 });
 document.getElementById("metronome-bpm").addEventListener("change", (e) => {
   Metronome.setBpm(Number(e.target.value));
+  if (Demo.running) Demo.start(); // re-run the example at the newly chosen tempo
 });
 document.getElementById("play-back-btn").addEventListener("click", () => { Screens.show("menu"); renderSongList(); });
 document.getElementById("play-menu-btn").addEventListener("click", () => { Screens.show("menu"); renderSongList(); });

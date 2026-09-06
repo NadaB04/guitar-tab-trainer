@@ -168,23 +168,33 @@ pass had a confirmed wrong note.
   echo of each note fired the instant it's played is inherently paced to them (never runs ahead,
   silently waits out pauses since it's driven by hits, not a clock). `miss()` is filtered noise;
   `clear()` is the song-complete fanfare.
-- `GuitarVoice` — a distorted electric-guitar-ish synth voice, used only by `Demo`. Shares
-  `SFX`'s `AudioContext`. One amp chain (`pre` drive gain → `WaveShaper` soft-clip → lowpass to
-  tame fizz → highpass to cut sub-junk → `master`) is built once; every `note(freq, when, dur,
-  vel)` routes its own graph (two detuned saws + a triangle body + a noise pick-transient, through
-  a per-note lowpass that closes as it decays, under a sharp-attack/long-ring envelope) into that
-  shared chain, so overlapping notes intermodulate through the one distortion like a real amp.
-  `panic()` fades `master` and hard-stops every tracked source node.
+- `GuitarVoice` — a plucked electric-guitar voice, used only by `Demo`. Shares `SFX`'s
+  `AudioContext`. Each `note(freq, when, dur, vel)` is a **modal string model**, not a raw
+  oscillator: a stack of sine partials at n×f (stretched slightly sharp by `stiffness`, an
+  inharmonicity term), each with its own decay (the fundamental rings ~1.5 s, harmonics die
+  progressively faster), scaled by a pluck-position comb `|sin(nπ·pluckPos)|`, plus a ~22 ms
+  band-passed noise pick-attack. That feeds one shared amp chain, built once: light `tanh`
+  soft-clip (`_softClip`, warmth not fuzz) → highpass → low-mid bump → body peak → presence
+  scoop → ~4.8 kHz "cabinet" lowpass → `master`. The earlier version was two detuned saws through
+  a heavy `WaveShaper` and the user said it sounded "metallic / like bips" — hence the rebuild;
+  keep it warm, keep distortion minimal. `panic()` fades `master` and hard-stops every tracked
+  node.
 - `Demo` — the "Hear it" mode (buttons `#demo-btn` in the play topline, `#demo-btn-gate` on the
   mic-gate; both call `Demo.toggle()`). Plays the loaded song through `GuitarVoice` while the tab
   strip scrolls continuously in sync — a worked example, no mic. Reuses the strip `PlayMode`
-  already built (`notes`, `notePositions`, `chipEls`, `tailEls`). Audio is scheduled ~0.4s ahead
+  already built (`notes`, `notePositions`, `chipEls`, `tailEls`). Audio is scheduled ~0.4 s ahead
   on the `AudioContext` clock (sample-accurate); the visual scroll is a `requestAnimationFrame`
-  loop reading the same clock via `_xAt(t)` (linear interpolation between note x-positions), so
-  sound and picture stay locked. Each note gets ±3¢ / ±velocity / ±10ms wobble so it doesn't sound
-  sequenced. `exit()` stops and resets the play screen via `PlayMode.load`; `stop()` is
-  teardown-only for navigation. `PlayMode.load` and `Screens.show` (leaving `play`) both call
-  `Demo.stop()`.
+  loop reading the same clock via `_xAt(t)`, so sound and picture stay locked. Each note gets ±3¢
+  / ±velocity / ±10 ms wobble so it doesn't sound sequenced.
+  **Tempo:** plays at whatever the `#metronome-bpm` select shows (not necessarily the song's own
+  BPM). `rate = chosenBpm / song.bpm`; `playTimes[i] = notes[i].time / rate` drives both audio
+  and scroll (`_xAt` multiplies `PIXELS_PER_SECOND` by `rate`). The `Metronome` is auto-started
+  at the chosen BPM after the lead-in so its click lines up with the notes; the metronome toggle
+  still works to mute it. Changing the BPM select mid-demo restarts the demo at the new tempo. The
+  `listening-tools` bar stays visible during a demo but CSS (`#screen-play:has(.demo-mode) …`)
+  hides its mic-only rows, leaving just the metronome/BPM row.
+  `exit()` stops and resets the play screen via `PlayMode.load`; `stop()` is teardown-only for
+  navigation. `PlayMode.load` and `Screens.show` (leaving `play`) both call `Demo.stop()`.
 - `MicDevices` — enumerates `audioinput` devices for the picker on the mic-gate screen (labels
   are blank until permission has been granted once) and remembers the last-picked device in
   `localStorage`.

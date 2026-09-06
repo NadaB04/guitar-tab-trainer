@@ -706,3 +706,6 @@ button:active { transform: scale(0.97); }
 .play-surface.demo-mode .track-strip { transition: none; }
 /* target-hint carries the "note N / total" during a demo, so hide the topline copy */
 #screen-play:has(.demo-mode) #play-song-progress { visibility: hidden; }
+/* during a demo the listening-tools bar shows only the metronome/BPM row */
+#screen-play:has(.demo-mode) .level-meter-row,
+#screen-play:has(.demo-mode) .gain-row { display: none; }

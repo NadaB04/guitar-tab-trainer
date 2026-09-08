@@ -23,6 +23,7 @@ theme), `app.js` (all logic, plain globals/objects, loaded as a single script).
 
 **Screens** (`Screens.show(id)` toggles `.active` on `#screen-<id>`; also pauses/resumes whichever
 of `PlayMode`/`Tuner` isn't the destination screen, since both share the one `PitchEngine` session):
+
 - `menu` — song grid, loaded from `songs/manifest.json` + one JSON file per song. A tuning-filter
   chip row above the grid (`renderTuningFilters`) groups songs by `tuningKey(song.tuning)` (a
   display string, e.g. `"e B G D A E"` — high-to-low, high-e lowercased, same convention as
@@ -62,49 +63,95 @@ prior pass (before this verification habit existed) had at least one confirmed w
 to be fixed later — don't assume old song files are correct without spot-checking if something
 sounds off.
 
-**Song data is currently a mix of states**, not yet consistent across the library: most songs
+**Song data is currently a mix of states**, not yet consistent across the library: many songs
 (8–28 notes) are still a short excerpt of just the main riff; a few (`smoke-on-the-water`,
-`back-in-black`, `the-diary-of-jane`, `animal-i-have-become`, 72–215 notes) were rebuilt from
-tab text to cover the full structure but as a straight guitar-cover line; and `seven-nation-army`
-is the first rebuilt from a **MIDI transcription**, which is now the preferred method — it sounds
-noticeably more like the record because you can take the melody/lead line's actual pitches and
-rhythm instead of a rhythm-guitar-only cover that reads as generic backing music.
+`back-in-black`, 72–215 notes) were rebuilt from tab text as a straight guitar-cover line;
+`seven-nation-army` was rebuilt from a MIDI transcription; and `snuff`, `numb`, `never-too-late`,
+`the-diary-of-jane`, `animal-i-have-become`, `i-hate-everything-about-you` (280–340 notes) were
+rebuilt from **Songsterr vocal tracks** — now the preferred method (below). `iron-man` is its
+recognizable riff pulled the same way from Songsterr's guitar track. The goal in every case: play
+the **melody the listener hums** (the vocal line, or the iconic riff when the riff _is_ the hook —
+Iron Man, SNA), _not_ the rhythm-guitar accompaniment, so it sounds like the record.
 
-**MIDI-transcription workflow** (use this when rebuilding a song). The goal the user cares about:
-play the **melody line the listener hums** (the vocal, or a piano arrangement's right hand —
-*not* the rhythm-guitar part), so it sounds like the record instead of generic backing music.
-`seven-nation-army.json` is built this way — study it as the model.
-1. Find a multitrack `.mid` (bitmidi.com `uploads/<id>.mid` — the id is in the page HTML; search
-   "<song> midi" / "<song> piano midi"). Prefer one in the **original key** — many are transposed;
-   check a known note against the recording and shift all pitches by the interval if needed
-   (SNA's file was up a perfect 5th → −7 semitones).
-2. Parse with `@tonejs/midi` (install in a scratch dir, not the repo). List every track: name,
-   instrument, note count, pitch range. The melody is usually a lone monophonic track named for a
-   wind instrument ("tenor sax", "flute", "recorder") standing in for the absent vocal, or a
-   piano/lead track. Rhythm-guitar and "pad"/"strings" tracks are accompaniment — skip them.
-3. Use MIDI **ticks** for timing, not seconds — `note.ticks / header.ppq` = beats, independent of
-   the file's (often wobbly, multi-tempo) tempo map. Quantise beats + durations to a 1/16 grid,
-   merge same-pitch stutter, then re-emit at the real song BPM (`beat * 60 / bpm`).
-4. Reduce to monophonic if the chosen track has chords: group near-simultaneous notes (onset
-   within ~40ms) and take the **top** note.
-5. Build the arrangement as a real song structure. Play the melody through the verses/choruses/
-   bridge; drop the **riff** into the intro, the long instrumental gaps (fill any melody rest ≥ ~3
-   beats), and the outro; include the **solo** if the MIDI has a clean one. Condense long repeats.
-6. Octave-shift into playable guitar range and map pitches to string/fret keeping the hand in one
-   position per section (melody in E3–B3 sits on the D/G strings; the SNA riff's low B is below
-   the guitar so it's played an octave up — the record's sub-octave is a Whammy pedal).
-7. Generate the JSON with a throwaway Node script that reads the `.mid` directly (see gen2.js in
-   the session scratchpad as a model). Scripts aren't checked in — only the JSON output.
-8. Verify in-browser: load the song, check note count and `freqToNoteName` of the melody/riff/
-   solo sections, screenshot the play surface.
+---
 
-Older tab-text approach (still fine for short riff excerpts): Ultimate Guitar's tab text isn't in
-the WebFetch-rendered page — `curl` the raw HTML and pull it from the `id="js-store"` element's
-`data-content` attribute (HTML-entity-decode, then `JSON.parse`; text at
-`store.page.data.tab_view.wiki_tab.content`). Cross-check pitches against a second source; a prior
-pass had a confirmed wrong note.
+### Preferred method: Songsterr vocal-track workflow
+
+Songsterr has professionally-transcribed per-instrument tracks for most well-known songs, often
+including a dedicated **"<singer> - Lead Vocals"** track (`isVocalTrack: true`). That track is the
+sung melody as clean machine-readable note data — no OCR, no MIDI hunting. This is how `snuff`,
+`numb`, etc. were built.
+
+All endpoints are public (no auth). `curl` gets 403 on `songsterr.com/api/*` unless you pass
+`-e "https://www.songsterr.com/"` (a Referer); the CloudFront CDN needs no header.
+
+1. **Find the song:** `GET https://www.songsterr.com/api/songs?pattern=<artist+title>&size=4`
+   → array of `{songId, title, artist, tracks:[{name, hash, isVocalTrack, isEmpty, tuning}]}`.
+2. **Get the revision + data key:**
+   - `GET /api/meta/<songId>` → `revisionId` and the full `tracks[]` (with `isVocalTrack`).
+   - `GET /api/revision/<revisionId>` → `image` (a version key like `v0-3-2-xxxxxxxx`).
+3. **Fetch the notation JSON** for the vocal track (its index in `tracks[]` = `partIdx`):
+   `https://dqsljvtekg760.cloudfront.net/<songId>/<revisionId>/<image>/<partIdx>.json`
+   (gzipped — `curl --compressed`). Shape:
+   `{ tuning:[6 MIDI ints], automations:{tempo:[{measure,bpm}]},
+      measures:[ { signature:[n,d], marker:{text}, voices:[ { beats:[
+        { duration:[num,den], type, rest, tuplet?, notes:[{string,fret,tie?}] } ] } ] } ] }`
+   `note MIDI = tuning[string] + fret`. `duration:[n,d]` = fraction of a whole note → beats = `4n/d`
+   (apply `tuplet[1]/tuplet[0]` if present). `tie:true` → merge into the previous same-pitch note.
+   Section names are in `measures[i].marker.text` (Intro / Verse / Chorus / Bridge / Outro …).
+   To discover the CDN URL for a new song without guessing: open the tab page in claude-in-chrome
+   and read `performance.getEntriesByType('resource')` — the data loads in a web worker so a
+   main-thread `fetch` hook won't see it.
+4. **Quality-gate before using it** (fan transcriptions vary):
+   - `chords`: count beats with >1 real note. Should be **0** for a vocal line. >0 = layered
+     screams/harmonies, transcription unreliable (Slipknot's heavier songs — Duality, Before I
+     Forget — fail here).
+   - `badBeatMeasures`: measures whose beat durations don't sum to the time signature. Should be
+     ~0. A few is fine (grace notes) — normalise them by scaling that measure's durations to fit.
+   - pitch range: if it dips below ~**E2** the transcription has octave errors — reject or fix.
+     (`i-hate-everything-about-you`'s vocal track is a rough fan job — octave-inconsistent bridge;
+     it's the weakest of the batch.)
+   - note count: <~150 for a full song = too sparse, skip (Three Days Grace "Pain").
+5. **Build the JSON:** flatten `measures → voices[0] → beats`, take the lowest note per beat
+   (mono; a clean vocal track has no chords so this is a no-op), tie-merge, accumulate real time
+   across the tempo map (`Σ beatDur × 60/bpm`), shift so the first note lands ~0.5 s in. Map each
+   MIDI to standard-tuning `{string,fret}` — open strings `{1:64,2:59,3:55,4:50,5:45,6:40}`, pick
+   the position minimising `|fret − 5|` (keeps a compact hand box; the batch all came out frets
+   3–7). Standard tuning always (`["E","A","D","G","B","E"]`, no `tuningOffsets`) — the user does
+   not retune, and a vocal melody maps fine to standard regardless of the original's tuning.
+6. **Verify:** load in-browser, check note count, and dump `freqToNoteName` per section — the
+   verse/chorus contour must match the actual song (e.g. Numb verse sits on C#4, chorus hook on
+   F#4). Screenshot the play surface / run "Hear it".
+
+Known limitation: vocal-only tracks scroll through **empty gaps** during solos/breakdowns (no
+vocal there). Acceptable but sparse — `animal-i-have-become` has a ~20 s gap.
+
+Do NOT bother with **MuseScore screenshots**: its embedded viewer freezes the claude-in-chrome
+screenshot/zoom tool after the first capture, won't scroll via events, and gates its page images.
+Tried thoroughly, not viable.
+
+### Fallbacks (when Songsterr has no usable vocal track)
+
+**MIDI transcription** (`seven-nation-army.json` is the model). Find a multitrack `.mid`
+(bitmidi.com `uploads/<id>.mid`; prefer the original key — check a known note vs the recording,
+shift all pitches by the interval). Parse with `@tonejs/midi` in a scratch dir. The melody is
+usually a lone monophonic track named for a wind instrument ("tenor sax", "flute") standing in for
+the absent vocal, or a piano/lead track — skip rhythm-guitar and "pad" tracks. Timing from
+**ticks** (`note.ticks / header.ppq` = beats), quantise to 1/16, merge stutter, re-emit at real
+BPM. Reduce chords to the **top** note. Build a real song structure: melody through the
+verses/choruses, riff in the intro / long gaps / outro, solo if clean. Octave-shift into playable
+range, one hand position per section.
+
+**Tab text** (short riff excerpts only): Ultimate Guitar's tab text isn't in the WebFetch-rendered
+page — `curl` the raw HTML and pull it from the `id="js-store"` element's `data-content` attribute
+(HTML-entity-decode, then `JSON.parse`; text at `store.page.data.tab_view.wiki_tab.content`).
+Cross-check pitches against a second source; a prior pass had a confirmed wrong note.
+
+Scripts for any of these are throwaway Node in the session scratchpad — never checked in, only the
+JSON output.
 
 **Core modules in `app.js`:**
+
 - `PitchEngine` — owns the mic `MediaStream`/`AudioContext`/`AnalyserNode` and the per-frame
   analysis loop (`_loop`, driven by `requestAnimationFrame`). `analyser.fftSize` is `4096` (not the
   more typical `2048`) — low strings need several full cycles in the window for autocorrelation to
@@ -116,7 +163,7 @@ pass had a confirmed wrong note.
   tuned for speech and distort instrument harmonics). Calls `onFrame(freqOrNull)` every frame — the
   callback is swapped depending on which screen is active (`Calibration.onFrame`,
   `PlayMode.onPitchFrame`, or `Tuner.onFrame`).
-- `autoCorrelate(buf, sampleRate)` — ACF2+ style autocorrelation pitch detector: a *blind* global
+- `autoCorrelate(buf, sampleRate)` — ACF2+ style autocorrelation pitch detector: a _blind_ global
   search for whatever single frequency best explains the whole buffer. Two independent gates before
   it trusts a frequency: `MIN_RMS` (raw loudness floor) and `MIN_CONFIDENCE` (`maxVal / c[0]`, i.e.
   how periodic the signal is — this is what actually distinguishes a real note from noise, and is
@@ -124,7 +171,7 @@ pass had a confirmed wrong note.
   `lastPitchDebug = {rms, confidence}` every call for on-screen diagnostics.
 - `correlationAtFreq(buf, sampleRate, freq)` — the non-blind counterpart: instead of asking "what's
   the one best-fitting frequency in this buffer," asks "how strongly does this buffer repeat at
-  *this specific known* frequency's period" (interpolated autocorrelation value at that one lag,
+  _this specific known_ frequency's period" (interpolated autocorrelation value at that one lag,
   normalized by `c[0]` the same way). Exists because when a new note is played while the previous
   one is still ringing (low strings sustain the longest, so this hits them hardest), the buffer is
   a blend of both and `autoCorrelate`'s global search locks onto neither cleanly — it settles on a
@@ -137,13 +184,13 @@ pass had a confirmed wrong note.
   chains vary wildly and blind threshold-tuning wasn't working — see "Known tuning constants" below.
 - `PlayMode` — practice state machine. `onPitchFrame` compares detected pitch (in cents, via
   `centsBetween`) against the current target note's frequency (`noteFrequency(string, fret)`).
-  A frame counts as a match if *either* the blind `autoCorrelate` result lands in tolerance, *or*
+  A frame counts as a match if _either_ the blind `autoCorrelate` result lands in tolerance, _or_
   `targetedMatch` does: it calls `correlationAtFreq` directly against the target's own frequency
   (skipped when the blind check already passed — it's a fallback, not run every frame) and accepts
-  if that correlation clears `TARGET_CORR_CONFIDENCE` *and* clearly beats the correlation at any of
+  if that correlation clears `TARGET_CORR_CONFIDENCE` _and_ clearly beats the correlation at any of
   the last couple of played notes' own frequencies (guards against accepting mere leftover ring
   from a note that hasn't finished decaying). Requires `CONFIRM_FRAMES` consecutive matching frames
-  to advance (fast) or `WRONG_CONFIRM_FRAMES` consecutive out-of-tolerance *blind* frames to log a
+  to advance (fast) or `WRONG_CONFIRM_FRAMES` consecutive out-of-tolerance _blind_ frames to log a
   miss (slower, to ride out pick-attack transient noise — "wrong" detection has no known target to
   check against, so it can't use the targeted path), each followed by a short cooldown. A frame
   that doesn't match the current target but does match one of the previous 1-2 notes
@@ -163,10 +210,7 @@ pass had a confirmed wrong note.
   canvas. Tracks `combo`/`bestCombo` for the on-screen streak badge.
 - `SFX` — small synthesized sounds on their own `AudioContext` (independent of `PitchEngine`'s, so
   it works pre-permission). `pluck(freq)` fires on every correct hit at the exact pitch of the note
-  just played — this doubles as a lightweight "backing track": there's no way to legally or
-  technically play the actual studio recording in sync with an arbitrary player's timing, but an
-  echo of each note fired the instant it's played is inherently paced to them (never runs ahead,
-  silently waits out pauses since it's driven by hits, not a clock). `miss()` is filtered noise;
+  just played . `miss()` is filtered noise;
   `clear()` is the song-complete fanfare.
 - `GuitarVoice` — a plucked electric-guitar voice, used only by `Demo`. Shares `SFX`'s
   `AudioContext`. Each `note(freq, when, dur, vel)` is a **modal string model**, not a raw
@@ -245,7 +289,7 @@ manually in a loop when checking results programmatically.
 This environment has no real mic. When the user reports a detection problem: (1) ask what the
 calibration/tuner readout actually shows (right note/Hz but not advancing? nothing at all?
 unstable/wrong note?) — that separates a device/routing issue from detection logic; (2) build a
-synthetic repro of that *specific* scenario (fake `MediaStream` from an oscillator, or hand-build a
+synthetic repro of that _specific_ scenario (fake `MediaStream` from an oscillator, or hand-build a
 `Float32Array` and call `autoCorrelate` on it — see "Testing without hardware") before touching
 anything; (3) prefer an algorithm fix over nudging a constant (e.g. `fftSize` 2048→4096 for
 low-string confidence, then `correlationAtFreq`/`targetedMatch` for the note-transition blends that

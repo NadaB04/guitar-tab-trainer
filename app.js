@@ -1065,10 +1065,12 @@ const Demo = {
 };
 
 /* ---------------------------------------------------------------------- *
- * Transport — the shared pause + seek bar under the target panel. Drives
- * Demo playback when a demo is running, otherwise jumps PlayMode's
- * practice position. One control, two modes (the `.demo-mode` class on
- * #play-surface says which).
+ * Transport — the shared pause button + minimap seek bar under the target
+ * panel. Drives Demo playback when a demo is running, otherwise jumps
+ * PlayMode's practice position. One control, two modes (the `.demo-mode`
+ * class on #play-surface says which). The minimap is a VS-Code-style
+ * scaled overview of every note in the song; click/drag anywhere on it
+ * to seek there.
  * ---------------------------------------------------------------------- */
 
 function fmtTime(s) {
@@ -1081,42 +1083,82 @@ const Transport = {
     return document.getElementById("play-surface").classList.contains("demo-mode");
   },
 
-  syncSlider() {
-    const slider = document.getElementById("seek-slider");
-    const label = document.getElementById("seek-label");
-    if (this.inDemo && Demo.notes) {
-      const i = Math.max(0, Demo.shownIdx);
-      slider.max = Math.max(0, Demo.notes.length - 1);
-      if (document.activeElement !== slider) slider.value = i;
-      const total = Demo.playTimes[Demo.playTimes.length - 1] || 0;
-      label.textContent = `${fmtTime(Demo.playTimes[i] || 0)} / ${fmtTime(total)} · ${i + 1}/${Demo.notes.length}`;
-    } else if (PlayMode.notes) {
-      slider.max = Math.max(0, PlayMode.notes.length - 1);
-      if (document.activeElement !== slider) slider.value = PlayMode.currentIndex;
-      label.textContent = `note ${PlayMode.currentIndex} / ${PlayMode.notes.length}`;
-    }
-  },
+  _notes() { return this.inDemo ? Demo.notes : PlayMode.notes; },
+  _index() { return this.inDemo ? Math.max(0, Demo.shownIdx) : PlayMode.currentIndex; },
 
-  // Called live while the user drags — update the label without stomping the thumb.
-  previewLabel(i) {
-    const label = document.getElementById("seek-label");
-    if (this.inDemo && Demo.notes) {
-      const total = Demo.playTimes[Demo.playTimes.length - 1] || 0;
-      label.textContent = `${fmtTime(Demo.playTimes[i] || 0)} / ${fmtTime(total)} · ${i + 1}/${Demo.notes.length}`;
-    } else if (PlayMode.notes) {
-      label.textContent = `note ${i} / ${PlayMode.notes.length}`;
-    }
+  // Keep the minimap head, viewport band and time label in step with playback / practice.
+  // Cheap: percentage math only, no layout reads (widths are cached at build time).
+  syncSlider() {
+    const notes = this._notes();
+    if (!notes || !notes.length) return;
+    if (this.mm._builtFor !== notes) this.mm.build(notes);
+    this.mm.updateHead();
+    const total = this.mm.total;
+    const i = Math.min(this._index(), notes.length - 1);
+    const now = this.inDemo && Demo.playTimes ? (Demo.playTimes[i] || 0) : notes[i].time;
+    const end = this.inDemo && Demo.playTimes ? (Demo.playTimes[Demo.playTimes.length - 1] || 0) : total;
+    document.getElementById("seek-label").textContent = `${fmtTime(now)} / ${fmtTime(end)}`;
   },
 
   updateToggleLabel() {
     const btn = document.getElementById("transport-toggle");
-    if (this.inDemo) {
-      btn.textContent = Demo.paused ? "▶ Resume" : "⏸ Pause";
-      btn.classList.toggle("active", Demo.paused);
-    } else {
-      btn.textContent = PlayMode.paused ? "▶ Resume" : "⏸ Pause";
-      btn.classList.toggle("active", PlayMode.paused);
-    }
+    const paused = this.inDemo ? Demo.paused : PlayMode.paused;
+    btn.textContent = paused ? "▶ Resume" : "⏸ Pause";
+    btn.classList.toggle("active", paused);
+  },
+
+  mm: {
+    _builtFor: null,
+    total: 0,
+    _vpWidth: 700,
+
+    build(notes) {
+      this._builtFor = notes;
+      const last = notes[notes.length - 1];
+      this.total = (last.time || 0) + (last.duration || 0) || 1;
+      const rows = STRING_ORDER.length;
+      document.getElementById("minimap-notes").innerHTML = notes.map((n) => {
+        const x = ((n.time || 0) / this.total) * 100;
+        const y = ((STRING_ORDER.indexOf(n.string) + 0.5) / rows) * 100;
+        return `<i style="left:${x.toFixed(3)}%;top:${y.toFixed(1)}%;background:${LANE_COLORS[n.string]}"></i>`;
+      }).join("");
+      this.measureViewport();
+      this.updateHead();
+    },
+
+    measureViewport() {
+      const vp = document.querySelector(".track-viewport");
+      if (vp && vp.clientWidth) this._vpWidth = vp.clientWidth;
+    },
+
+    updateHead() {
+      const notes = Transport._notes();
+      if (!notes || !this.total) return;
+      const t = notes[Math.min(Transport._index(), notes.length - 1)].time || 0;
+      document.getElementById("minimap-head").style.left = `${((t / this.total) * 100).toFixed(3)}%`;
+      // band = the slice of the song currently inside the main track viewport
+      const secPerPx = 1 / (PIXELS_PER_SECOND * (Transport.inDemo ? (Demo.rate || 1) : 1));
+      const t0 = t - PLAYHEAD_X * secPerPx;
+      const t1 = t + (this._vpWidth - PLAYHEAD_X) * secPerPx;
+      const L = Math.max(0, (t0 / this.total) * 100);
+      const R = Math.min(100, (t1 / this.total) * 100);
+      const band = document.getElementById("minimap-view");
+      band.style.left = `${L.toFixed(3)}%`;
+      band.style.width = `${Math.max(0, R - L).toFixed(3)}%`;
+    },
+
+    // Pointer x (client coords) -> nearest note index.
+    idxAt(clientX) {
+      const notes = Transport._notes();
+      const r = document.getElementById("minimap").getBoundingClientRect();
+      const targetT = Math.max(0, Math.min(1, (clientX - r.left) / r.width)) * this.total;
+      let best = 0, bd = Infinity;
+      for (let k = 0; k < notes.length; k++) {
+        const d = Math.abs((notes[k].time || 0) - targetT);
+        if (d < bd) { bd = d; best = k; }
+      }
+      return best;
+    },
   },
 };
 
@@ -1756,17 +1798,45 @@ document.getElementById("transport-toggle").addEventListener("click", () => {
   if (Transport.inDemo) Demo.togglePause();
   else PlayMode.togglePause();
 });
-const seekSlider = document.getElementById("seek-slider");
-seekSlider.addEventListener("input", (e) => {
-  const v = Number(e.target.value);
-  if (Transport.inDemo) Demo.scrub(v);
-  else PlayMode.seekToIndex(v);
-  Transport.previewLabel(v);
+
+// Minimap seek: click or drag anywhere on the overview to jump there.
+const minimap = document.getElementById("minimap");
+let mmDragging = false;
+const mmSeekTo = (clientX) => {
+  const i = Transport.mm.idxAt(clientX);
+  if (Transport.inDemo) Demo.scrub(i);
+  else PlayMode.seekToIndex(i);
+};
+minimap.addEventListener("pointerdown", (e) => {
+  if (!Transport._notes()) return;
+  mmDragging = true;
+  try { minimap.setPointerCapture(e.pointerId); } catch (_) { /* keeps drag alive outside the element */ }
+  mmSeekTo(e.clientX);
 });
-seekSlider.addEventListener("change", (e) => {
-  const v = Number(e.target.value);
-  if (Transport.inDemo) Demo.commitScrub(v);
+minimap.addEventListener("pointermove", (e) => { if (mmDragging) mmSeekTo(e.clientX); });
+minimap.addEventListener("pointerup", (e) => {
+  if (!mmDragging) return;
+  mmDragging = false;
+  try { minimap.releasePointerCapture(e.pointerId); } catch (_) {}
+  if (Transport.inDemo) Demo.commitScrub(Transport.mm.idxAt(e.clientX));
 });
+minimap.addEventListener("keydown", (e) => {
+  const notes = Transport._notes();
+  if (!notes) return;
+  let i = Transport._index();
+  if (e.key === "ArrowRight") i += 1;
+  else if (e.key === "ArrowLeft") i -= 1;
+  else if (e.key === "PageUp") i += 10;
+  else if (e.key === "PageDown") i -= 10;
+  else if (e.key === "Home") i = 0;
+  else if (e.key === "End") i = notes.length - 1;
+  else return;
+  e.preventDefault();
+  i = Math.max(0, Math.min(notes.length - 1, i));
+  if (Transport.inDemo) { Demo.scrub(i); Demo.commitScrub(i); }
+  else PlayMode.seekToIndex(i);
+});
+window.addEventListener("resize", () => { Transport.mm.measureViewport(); Transport.mm.updateHead(); });
 
 document.getElementById("nav-tuner-btn").addEventListener("click", () => Screens.show("tuner"));
 document.getElementById("tuner-back-btn").addEventListener("click", () => Screens.show("menu"));

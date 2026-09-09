@@ -241,13 +241,21 @@ a song. Scripts for the two fallbacks are throwaway Node in the session scratchp
   and re-point `nextIdx`/`shownIdx`). `scrub(i)`/`commitScrub(i)` are the seek-slider hooks —
   live drag pauses and repaints via `_renderAt(t)` (which does NOT touch the clock), release
   seeks there and resumes iff playback was running when grabbed (`_scrubResume`).
-- `Transport` — the shared pause + seek bar (`#transport-bar` under the target panel, visible on
-  the practice surface AND during a demo). `inDemo` (the `.demo-mode` class) picks which it
-  drives: Demo's `togglePause`/`scrub`/`commitScrub`, or `PlayMode.togglePause()` (pauses mic
-  listening) / `PlayMode.seekToIndex(i)` (jumps `currentIndex`; notes skipped past keep a `null`
-  result and render neutral, not as a miss). `syncSlider()` keeps the thumb+label in step with
-  playback/practice progress (skipped while the slider has focus, i.e. mid-drag); called from
-  `Demo._loop`, `PlayMode.updateProgress`, and the seek/pause paths. `fmtTime()` → `m:ss`.
+- `Transport` — the shared pause button + **minimap** seek bar (`#transport-bar` under the target
+  panel, visible on the practice surface AND during a demo). `inDemo` (the `.demo-mode` class)
+  picks which it drives: Demo's `togglePause`/`scrub`/`commitScrub`, or `PlayMode.togglePause()`
+  (pauses mic listening) / `PlayMode.seekToIndex(i)` (jumps `currentIndex`; notes skipped past
+  keep a `null` result and render neutral, not as a miss).
+  `Transport.mm` is the minimap: a VS-Code-style scaled overview — every note drawn as a tiny
+  `<i>` tick positioned by `time` (x, as % of song length) and `string` (y), in lane colour.
+  `build(notes)` (re-run when the notes array identity changes), `updateHead()` (moves the green
+  position line + the translucent band showing the slice currently inside the main viewport —
+  pure %-math, no per-frame layout reads; viewport px width cached via `measureViewport()` on
+  build + `resize`), `idxAt(clientX)` → nearest note index for pointer seeks. `syncSlider()`
+  (kept name) rebuilds if needed, calls `updateHead()`, and sets the `m:ss / m:ss` label; called
+  from `Demo._loop` (on note change only), `PlayMode.updateProgress`, and the seek/pause paths.
+  `fmtTime()` → `m:ss`. Wiring: `pointerdown`/`move`/`up` on `#minimap` scrub-seek (setPointer
+  capture is try/caught so synthetic test events still work), arrow/PageUp/Home/End keys step.
 - `MicDevices` — enumerates `audioinput` devices for the picker on the mic-gate screen (labels
   are blank until permission has been granted once) and remembers the last-picked device in
   `localStorage`.

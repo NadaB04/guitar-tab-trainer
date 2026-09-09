@@ -357,17 +357,59 @@ button:active { transform: scale(0.97); }
   display: flex;
   align-items: center;
   gap: 12px;
-  max-width: 520px;
+  max-width: 640px;
   margin: 0 auto 22px;
 }
-.transport-bar input[type="range"] { flex: 1; min-width: 0; }
+.transport-bar #transport-toggle { flex: none; }
 .transport-bar #seek-label {
+  flex: none;
   font-family: "Consolas", monospace;
   font-size: 0.72rem;
   color: var(--text-dim);
   white-space: nowrap;
 }
-.transport-bar #transport-toggle { flex: none; }
+
+/* VS Code–style minimap: a scaled overview of the whole song's notes, click/drag to seek */
+.minimap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 34px;
+  background: var(--bg-highlight);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  cursor: pointer;
+}
+.minimap:focus-visible { outline: 2px solid var(--green-bright); outline-offset: 1px; }
+.minimap-notes { position: absolute; inset: 4px 0; }
+.minimap-notes i {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 1px;
+  margin: -1.5px 0 0 -1.5px;
+  opacity: 0.85;
+}
+.minimap-view {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.09);
+  border-left: 1px solid rgba(255, 255, 255, 0.22);
+  border-right: 1px solid rgba(255, 255, 255, 0.22);
+  pointer-events: none;
+}
+.minimap-head {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  margin-left: -1px;
+  background: var(--green-bright);
+  box-shadow: 0 0 6px rgba(29, 185, 84, 0.9);
+  pointer-events: none;
+}
 
 .target-panel {
   text-align: center;

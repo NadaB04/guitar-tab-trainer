@@ -127,8 +127,12 @@
 
         <div id="transport-bar" class="transport-bar">
           <button id="transport-toggle" class="pill ghost small">⏸ Pause</button>
-          <input id="seek-slider" type="range" min="0" max="0" step="1" value="0" aria-label="Seek through the song" />
-          <span id="seek-label">note 0 / 0</span>
+          <div id="minimap" class="minimap" role="slider" tabindex="0" aria-label="Seek through the song">
+            <div id="minimap-notes" class="minimap-notes"></div>
+            <div id="minimap-view" class="minimap-view"></div>
+            <div id="minimap-head" class="minimap-head"></div>
+          </div>
+          <span id="seek-label">0:00 / 0:00</span>
         </div>
 
         <div class="tuner">

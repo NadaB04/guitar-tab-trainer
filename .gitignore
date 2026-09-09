@@ -1,2 +1,6 @@
 server.log
 node_modules/
+
+# raw transcription source material — kept locally, not in the repo
+songs/*.mid
+songs/*.mp3

@@ -15,11 +15,14 @@ not on a timer or keyboard input. Spotify-styled dark UI. No build step, no fram
 - There are no automated tests. Verification so far has been manual, in Chrome, including
   feeding synthetic tones/noise through a fake `MediaStream` (bypassing `getUserMedia`) to test
   the pitch-detection pipeline without needing a physical mic — see "Testing without hardware" below.
+- Add a song: `node tools/songsterr-import.js "<artist title>"` (dry run), then `… --write <id>
+  "<Title>" "<Artist>" [Difficulty]` — see "Songsterr vocal-track workflow" below.
 
 ## Architecture
 
-Three files, no modules/bundler: `index.html` (structure/screens), `style.css` (Spotify-style dark
-theme), `app.js` (all logic, plain globals/objects, loaded as a single script).
+The app is three files, no modules/bundler: `index.html` (structure/screens), `style.css`
+(Spotify-style dark theme), `app.js` (all logic, plain globals/objects, loaded as a single
+script). `tools/` holds the checked-in song importer. `songs/` is the JSON library + manifest.
 
 **Screens** (`Screens.show(id)` toggles `.active` on `#screen-<id>`; also pauses/resumes whichever
 of `PlayMode`/`Tuner` isn't the destination screen, since both share the one `PitchEngine` session):
@@ -75,60 +78,51 @@ like the record. Add new songs with the workflow below.
 
 ---
 
-### Preferred method: Songsterr vocal-track workflow
+### Preferred method: `tools/songsterr-import.js`
 
-Songsterr has professionally-transcribed per-instrument tracks for most well-known songs, often
-including a dedicated **"<singer> - Lead Vocals"** track (`isVocalTrack: true`). That track is the
-sung melody as clean machine-readable note data — no OCR, no MIDI hunting. This is how `snuff`,
-`numb`, etc. were built.
+Songsterr has professionally-transcribed per-instrument tracks for most well-known songs, usually
+including a **"<singer> - Lead Vocals"** track — the sung melody as clean note data, no OCR, no
+MIDI hunting. The importer does the whole pipeline (find song → pull vocal track from Songsterr's
+CDN → quality-check → build the ShredType JSON → register in the manifest). It's the whole
+method; run it, then eyeball its output.
 
-All endpoints are public (no auth). `curl` gets 403 on `songsterr.com/api/*` unless you pass
-`-e "https://www.songsterr.com/"` (a Referer); the CloudFront CDN needs no header.
+```
+# 1. dry run — prints GOOD/SUSPECT, note/chord/badBeat counts, pitch range, sections,
+#    and the verse/chorus pitch contour so you can sanity-check against the record:
+node tools/songsterr-import.js "linkin park numb"
 
-1. **Find the song:** `GET https://www.songsterr.com/api/songs?pattern=<artist+title>&size=4`
-   → array of `{songId, title, artist, tracks:[{name, hash, isVocalTrack, isEmpty, tuning}]}`.
-2. **Get the revision + data key:**
-   - `GET /api/meta/<songId>` → `revisionId` and the full `tracks[]` (with `isVocalTrack`).
-   - `GET /api/revision/<revisionId>` → `image` (a version key like `v0-3-2-xxxxxxxx`).
-3. **Fetch the notation JSON** for the vocal track (its index in `tracks[]` = `partIdx`):
-   `https://dqsljvtekg760.cloudfront.net/<songId>/<revisionId>/<image>/<partIdx>.json`
-   (gzipped — `curl --compressed`). Shape:
-   `{ tuning:[6 MIDI ints], automations:{tempo:[{measure,bpm}]},
-      measures:[ { signature:[n,d], marker:{text}, voices:[ { beats:[
-        { duration:[num,den], type, rest, tuplet?, notes:[{string,fret,tie?}] } ] } ] } ] }`
-   `note MIDI = tuning[string] + fret`. `duration:[n,d]` = fraction of a whole note → beats = `4n/d`
-   (apply `tuplet[1]/tuplet[0]` if present). `tie:true` → merge into the previous same-pitch note.
-   Section names are in `measures[i].marker.text` (Intro / Verse / Chorus / Bridge / Outro …).
-   To discover the CDN URL for a new song without guessing: open the tab page in claude-in-chrome
-   and read `performance.getEntriesByType('resource')` — the data loads in a web worker so a
-   main-thread `fetch` hook won't see it.
-4. **Quality-gate before using it** (fan transcriptions vary):
-   - `chords`: count beats with >1 real note. Should be **0** for a vocal line. >0 = layered
-     screams/harmonies, transcription unreliable (Slipknot's heavier songs — Duality, Before I
-     Forget — fail here).
-   - `badBeatMeasures`: measures whose beat durations don't sum to the time signature. Should be
-     ~0. A few is fine (grace notes) — normalise them by scaling that measure's durations to fit.
-   - pitch range: if it dips below ~**E2** the transcription has octave errors — reject or fix.
-     (`i-hate-everything-about-you`'s vocal track is a rough fan job — octave-inconsistent bridge;
-     it's the weakest of the batch.)
-   - note count: <~150 for a full song = too sparse, skip (Three Days Grace "Pain").
-5. **Build the JSON:** flatten `measures → voices[0] → beats`, take the lowest note per beat
-   (mono; a clean vocal track has no chords so this is a no-op), tie-merge, accumulate real time
-   across the tempo map (`Σ beatDur × 60/bpm`), shift so the first note lands ~0.5 s in. Map each
-   MIDI to standard-tuning `{string,fret}` — open strings `{1:64,2:59,3:55,4:50,5:45,6:40}`, pick
-   the position minimising `|fret − 5|` (keeps a compact hand box; the batch all came out frets
-   3–7). Standard tuning always (`["E","A","D","G","B","E"]`, no `tuningOffsets`) — the user does
-   not retune, and a vocal melody maps fine to standard regardless of the original's tuning.
-6. **Verify:** load in-browser, check note count, and dump `freqToNoteName` per section — the
-   verse/chorus contour must match the actual song (e.g. Numb verse sits on C#4, chorus hook on
-   F#4). Screenshot the play surface / run "Hear it".
+# 2. if it looks right, write it (adds songs/<id>.json + the manifest entry):
+node tools/songsterr-import.js "linkin park numb" --write numb "Numb" "Linkin Park" Beginner
 
-Known limitation: vocal-only tracks scroll through **empty gaps** during solos/breakdowns (no
-vocal there). Acceptable but sparse — `animal-i-have-become` has a ~20 s gap.
+# 3. node server.js → load the song → "Hear it" → confirm the melody matches the record.
+```
+
+Accepts a Songsterr numeric `songId` in place of the search string. Node 18+, no deps. The script
+header + comments explain the data shape and every transform; the important knobs:
+
+- **Quality gate** (`GOOD` vs `SUSPECT`): rejects if any beat has >1 note (layered
+  screams/harmonies — Slipknot's heavier songs fail this), if too many measures don't fill their
+  bar, if the range dips below E2 (octave errors), if <150 notes (too sparse — TDG "Pain"), or if
+  there's no Chorus section (partial transcription — TDG "I Am Machine"). `SUSPECT` isn't fatal —
+  read the contour and decide. `i-hate-everything-about-you` slipped through as a weak one
+  (octave-inconsistent bridge).
+- **Fingering:** every pitch maps to standard tuning, position closest to fret 5 (compact box,
+  strings biased toward the middle). Standard tuning always — the user doesn't retune and a vocal
+  line sits fine in standard regardless of the original key.
+- **Tempo:** honours Songsterr's per-measure tempo map; assumes 4/4 (fine for ~all rock).
+
+Known limitation: a vocal-only line scrolls through **empty gaps** during solos/breakdowns.
+Acceptable but sparse — `animal-i-have-become` has a ~20 s gap.
 
 Do NOT bother with **MuseScore screenshots**: its embedded viewer freezes the claude-in-chrome
 screenshot/zoom tool after the first capture, won't scroll via events, and gates its page images.
 Tried thoroughly, not viable.
+
+If you need the raw Songsterr endpoints (the script encapsulates these): `/api/songs?pattern=`,
+`/api/meta/<songId>` (→ `revisionId`, `tracks[]`), `/api/revision/<rev>` (→ `image` key), then
+the notation JSON at `dqsljvtekg760.cloudfront.net/<songId>/<rev>/<image>/<trackIdx>.json`.
+`curl` needs `-e https://www.songsterr.com/` for the `/api/*` calls (403 otherwise); the CDN
+doesn't.
 
 ### Fallbacks (when Songsterr has no usable vocal track)
 
@@ -148,8 +142,8 @@ page — `curl` the raw HTML and pull it from the `id="js-store"` element's `dat
 (HTML-entity-decode, then `JSON.parse`; text at `store.page.data.tab_view.wiki_tab.content`).
 Cross-check pitches against a second source; a prior pass had a confirmed wrong note.
 
-Scripts for any of these are throwaway Node in the session scratchpad — never checked in, only the
-JSON output.
+The Songsterr importer (`tools/songsterr-import.js`) is checked in — it's the standard way to add
+a song. Scripts for the two fallbacks are throwaway Node in the session scratchpad.
 
 **Core modules in `app.js`:**
 

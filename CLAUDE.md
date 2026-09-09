@@ -63,15 +63,15 @@ prior pass (before this verification habit existed) had at least one confirmed w
 to be fixed later — don't assume old song files are correct without spot-checking if something
 sounds off.
 
-**Song data is currently a mix of states**, not yet consistent across the library: many songs
-(8–28 notes) are still a short excerpt of just the main riff; a few (`smoke-on-the-water`,
-`back-in-black`, 72–215 notes) were rebuilt from tab text as a straight guitar-cover line;
-`seven-nation-army` was rebuilt from a MIDI transcription; and `snuff`, `numb`, `never-too-late`,
-`the-diary-of-jane`, `animal-i-have-become`, `i-hate-everything-about-you` (280–340 notes) were
-rebuilt from **Songsterr vocal tracks** — now the preferred method (below). `iron-man` is its
-recognizable riff pulled the same way from Songsterr's guitar track. The goal in every case: play
-the **melody the listener hums** (the vocal line, or the iconic riff when the riff _is_ the hook —
-Iron Man, SNA), _not_ the rhythm-guitar accompaniment, so it sounds like the record.
+**The library is now uniform**: every song is a full-song **Songsterr vocal-track**
+transcription (`snuff`, `numb`, `never-too-late`, `break`, `home`, `gone-forever`, `wake-up`,
+`let-it-die`, `over-and-over`, `scared`, `animal-i-have-become`, `i-hate-everything-about-you`,
+`the-diary-of-jane`), except `iron-man`, whose recognizable riff was pulled the same way from
+Songsterr's guitar track. The older short riff-excerpts and the MIDI/mp3 rebuilds
+(`seven-nation-army`, `nothing-else-matters`, etc.) were deleted — recover any from git history
+if needed. The goal in every case: play the **melody the listener hums** (the vocal line, or the
+iconic riff when the riff _is_ the hook), _not_ the rhythm-guitar accompaniment, so it sounds
+like the record. Add new songs with the workflow below.
 
 ---
 
@@ -132,7 +132,8 @@ Tried thoroughly, not viable.
 
 ### Fallbacks (when Songsterr has no usable vocal track)
 
-**MIDI transcription** (`seven-nation-army.json` is the model). Find a multitrack `.mid`
+**MIDI transcription** (the deleted `seven-nation-army.json` was the model — pull it from git
+history if you need a worked example). Find a multitrack `.mid`
 (bitmidi.com `uploads/<id>.mid`; prefer the original key — check a known note vs the recording,
 shift all pitches by the interval). Parse with `@tonejs/midi` in a scratch dir. The melody is
 usually a lone monophonic track named for a wind instrument ("tenor sax", "flute") standing in for

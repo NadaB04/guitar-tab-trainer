@@ -790,6 +790,7 @@ const GuitarVoice = {
 
 const Demo = {
   running: false,
+  paused: false,
   rafId: null,
   metroTimer: null,
   notes: null,
@@ -800,6 +801,8 @@ const Demo = {
   audioStart: 0,
   nextIdx: 0,      // next note to schedule for audio
   shownIdx: -1,    // last note index reflected in the strip highlight
+  _pausedT: 0,     // playback time (s since first note) captured when paused/scrubbing
+  _scrubResume: false, // was playback running when the user grabbed the seek slider?
   LEAD_IN: 0.4,
 
   toggle() {
@@ -837,6 +840,8 @@ const Demo = {
     for (let i = 0; i < this.notes.length; i++) this._setChip(i, "upcoming");
 
     this.running = true;
+    this.paused = false;
+    this._scrubResume = false;
     this.nextIdx = 0;
     this.shownIdx = -1;
     this.audioStart = ctx.currentTime + this.LEAD_IN;
@@ -851,6 +856,8 @@ const Demo = {
     }, this.LEAD_IN * 1000);
 
     this._loop();
+    Transport.syncSlider();
+    Transport.updateToggleLabel();
   },
 
   _btns() {
@@ -858,7 +865,7 @@ const Demo = {
   },
 
   _loop() {
-    if (!this.running) return;
+    if (!this.running || this.paused) return;
     const ctx = SFX.ctx;
     const t = ctx.currentTime - this.audioStart; // seconds since the first note (negative during lead-in)
 
@@ -896,6 +903,7 @@ const Demo = {
           `${freqToNoteName(f)} · note ${cur + 1} / ${this.notes.length}`;
       }
       this.shownIdx = cur;
+      Transport.syncSlider();
     }
 
     if (t > this.playTimes[this.playTimes.length - 1] +
@@ -933,8 +941,99 @@ const Demo = {
     return pos[i].x + (pos[i + 1].x - pos[i].x) * ((t - pt[i]) / (pt[i + 1] - pt[i]));
   },
 
+  togglePause() {
+    if (!this.running) return;
+    if (this.paused) this.resume();
+    else this.pause();
+  },
+
+  pause() {
+    if (!this.running || this.paused) return;
+    this.paused = true;
+    this._pausedT = SFX.ctx.currentTime - this.audioStart;
+    if (this.rafId) cancelAnimationFrame(this.rafId);
+    this.rafId = null;
+    if (this.metroTimer) { clearTimeout(this.metroTimer); this.metroTimer = null; }
+    this._stopMetro();
+    GuitarVoice.panic();
+    Transport.updateToggleLabel();
+  },
+
+  resume() {
+    if (!this.running || !this.paused) return;
+    this.paused = false;
+    const ctx = GuitarVoice.ensure();
+    const startT = Math.max(0, this._pausedT);
+    this.audioStart = ctx.currentTime + 0.15 - startT;
+    this.nextIdx = 0;
+    while (this.nextIdx < this.notes.length && this.playTimes[this.nextIdx] < startT) this.nextIdx++;
+    this.shownIdx = this.nextIdx - 1;
+    const bpm = Number(document.getElementById("metronome-bpm").value) || this.song.bpm || 120;
+    this.metroTimer = setTimeout(() => {
+      if (!this.running || this.paused) return;
+      this._startMetro(bpm);
+    }, 150);
+    Transport.updateToggleLabel();
+    this._loop();
+  },
+
+  // Live drag on the seek slider: freeze playback and move the view to note `i`.
+  scrub(i) {
+    if (!this.running) return;
+    if (!this.paused) { this._scrubResume = true; this.pause(); }
+    this._pausedT = this.playTimes[i] || 0;
+    this._renderAt(this._pausedT);
+  },
+
+  // Seek slider released: land the seek there, and resume if playback was running when grabbed.
+  commitScrub(i) {
+    if (!this.running) return;
+    this._pausedT = this.playTimes[i] || 0;
+    if (this._scrubResume) { this._scrubResume = false; this.resume(); }
+    else this._renderAt(this._pausedT);
+  },
+
+  // Paint the strip + chip states + labels for playback time `t`, without advancing the clock.
+  _renderAt(t) {
+    document.getElementById("track-strip").style.transform =
+      `translateX(${PLAYHEAD_X - this._xAt(t)}px)`;
+    let cur = -1;
+    for (let i = 0; i < this.notes.length; i++) {
+      if (this.playTimes[i] <= t + 0.015) cur = i; else break;
+    }
+    for (let i = 0; i < this.notes.length; i++) {
+      this._setChip(i, i < cur ? "played" : i === cur ? "current" : "upcoming");
+    }
+    this.shownIdx = cur;
+    if (cur >= 0) {
+      const n = this.notes[cur];
+      const f = noteFrequency(n.string, n.fret, this.song.tuningOffsets);
+      document.getElementById("target-note").textContent =
+        `${stringLabel(this.song, n.string).toUpperCase()} — fret ${n.fret}`;
+      document.getElementById("target-hint").textContent =
+        `${freqToNoteName(f)} · note ${cur + 1} / ${this.notes.length}`;
+    }
+    Transport.syncSlider();
+  },
+
+  _startMetro(bpm) {
+    Metronome.start(bpm);
+    const b = document.getElementById("metronome-toggle");
+    b.textContent = "🥁 Metronome: On";
+    b.classList.add("active");
+  },
+
+  _stopMetro() {
+    Metronome.stop();
+    const b = document.getElementById("metronome-toggle");
+    b.textContent = "🥁 Metronome: Off";
+    b.classList.remove("active");
+  },
+
   stopInternal() {
     this.running = false;
+    this.paused = false;
+    this._scrubResume = false;
     if (this.rafId) cancelAnimationFrame(this.rafId);
     this.rafId = null;
     if (this.metroTimer) { clearTimeout(this.metroTimer); this.metroTimer = null; }
@@ -962,6 +1061,62 @@ const Demo = {
   // Teardown only — for navigation away, where the screen is changing anyway.
   stop() {
     if (this.running || this.rafId) this.stopInternal();
+  },
+};
+
+/* ---------------------------------------------------------------------- *
+ * Transport — the shared pause + seek bar under the target panel. Drives
+ * Demo playback when a demo is running, otherwise jumps PlayMode's
+ * practice position. One control, two modes (the `.demo-mode` class on
+ * #play-surface says which).
+ * ---------------------------------------------------------------------- */
+
+function fmtTime(s) {
+  s = Math.max(0, Math.round(s));
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+}
+
+const Transport = {
+  get inDemo() {
+    return document.getElementById("play-surface").classList.contains("demo-mode");
+  },
+
+  syncSlider() {
+    const slider = document.getElementById("seek-slider");
+    const label = document.getElementById("seek-label");
+    if (this.inDemo && Demo.notes) {
+      const i = Math.max(0, Demo.shownIdx);
+      slider.max = Math.max(0, Demo.notes.length - 1);
+      if (document.activeElement !== slider) slider.value = i;
+      const total = Demo.playTimes[Demo.playTimes.length - 1] || 0;
+      label.textContent = `${fmtTime(Demo.playTimes[i] || 0)} / ${fmtTime(total)} · ${i + 1}/${Demo.notes.length}`;
+    } else if (PlayMode.notes) {
+      slider.max = Math.max(0, PlayMode.notes.length - 1);
+      if (document.activeElement !== slider) slider.value = PlayMode.currentIndex;
+      label.textContent = `note ${PlayMode.currentIndex} / ${PlayMode.notes.length}`;
+    }
+  },
+
+  // Called live while the user drags — update the label without stomping the thumb.
+  previewLabel(i) {
+    const label = document.getElementById("seek-label");
+    if (this.inDemo && Demo.notes) {
+      const total = Demo.playTimes[Demo.playTimes.length - 1] || 0;
+      label.textContent = `${fmtTime(Demo.playTimes[i] || 0)} / ${fmtTime(total)} · ${i + 1}/${Demo.notes.length}`;
+    } else if (PlayMode.notes) {
+      label.textContent = `note ${i} / ${PlayMode.notes.length}`;
+    }
+  },
+
+  updateToggleLabel() {
+    const btn = document.getElementById("transport-toggle");
+    if (this.inDemo) {
+      btn.textContent = Demo.paused ? "▶ Resume" : "⏸ Pause";
+      btn.classList.toggle("active", Demo.paused);
+    } else {
+      btn.textContent = PlayMode.paused ? "▶ Resume" : "⏸ Pause";
+      btn.classList.toggle("active", PlayMode.paused);
+    }
   },
 };
 
@@ -1090,6 +1245,7 @@ const PlayMode = {
   cooldownUntil: 0,
   hadMissOnCurrent: false,
   listening: false,
+  paused: false,
 
   // Repeated-note handling: when the current target is the same pitch as the note just
   // played, its own decaying ring would otherwise re-satisfy the match instantly. Require
@@ -1114,6 +1270,7 @@ const PlayMode = {
     this.lastWrongNoteId = null;
     this.wrongCandidateCount = 0;
     this.listening = false;
+    this.paused = false;
     this.combo = 0;
     this.bestCombo = 0;
     this.updateCombo();
@@ -1170,8 +1327,11 @@ const PlayMode = {
     document.getElementById("play-surface").classList.remove("hidden");
     PitchEngine.onFrame = (freq) => this.onPitchFrame(freq);
     this.listening = true;
+    this.paused = false;
     this.renderTarget();
     this.updateTrackTransform();
+    Transport.syncSlider();
+    Transport.updateToggleLabel();
   },
 
   stop() {
@@ -1267,7 +1427,9 @@ const PlayMode = {
     const setState = (el, i) => {
       el.classList.remove("played-correct", "played-wrong", "current", "upcoming", "match-flash");
       if (i < this.currentIndex) {
-        el.classList.add(this.results[i] === "correct" ? "played-correct" : "played-wrong");
+        const r = this.results[i];
+        // null = skipped past via the seek slider — show it neutral, not as a miss.
+        el.classList.add(r === "correct" ? "played-correct" : r ? "played-wrong" : "upcoming");
       } else if (i === this.currentIndex) {
         el.classList.add("current");
       } else {
@@ -1292,10 +1454,44 @@ const PlayMode = {
   updateProgress() {
     document.getElementById("play-song-progress").textContent =
       `${this.currentIndex} / ${this.notes.length} notes`;
+    Transport.syncSlider();
+  },
+
+  togglePause() {
+    if (this.paused) {
+      this.paused = false;
+      this.listening = true;
+      this.renderTarget();
+    } else {
+      this.paused = true;
+      this.listening = false;
+      this.matchCount = 0;
+      this.wrongCandidateCount = 0;
+      this.setTuner(null, null);
+    }
+    Transport.updateToggleLabel();
+  },
+
+  // Jump practice position to note `i` (from the seek slider).
+  seekToIndex(i) {
+    i = Math.max(0, Math.min(this.notes.length - 1, i | 0));
+    this.currentIndex = i;
+    this.hadMissOnCurrent = false;
+    this.matchCount = 0;
+    this.wrongCandidateCount = 0;
+    this.lastWrongNoteId = null;
+    this.cooldownUntil = 0;
+    this.rmsHistory = [];
+    this.combo = 0;
+    this.updateCombo();
+    this.updateReattackState();
+    this.renderTarget();
+    this.updateTrackTransform();
+    this.updateProgress();
   },
 
   onPitchFrame(freq) {
-    if (!this.listening || this.currentIndex >= this.notes.length) return;
+    if (!this.listening || this.paused || this.currentIndex >= this.notes.length) return;
 
     this.trackReattack(freq, lastPitchDebug.rms);
 
@@ -1555,6 +1751,22 @@ document.getElementById("play-replay-btn").addEventListener("click", () => PlayM
 
 document.getElementById("demo-btn").addEventListener("click", () => Demo.toggle());
 document.getElementById("demo-btn-gate").addEventListener("click", () => Demo.toggle());
+
+document.getElementById("transport-toggle").addEventListener("click", () => {
+  if (Transport.inDemo) Demo.togglePause();
+  else PlayMode.togglePause();
+});
+const seekSlider = document.getElementById("seek-slider");
+seekSlider.addEventListener("input", (e) => {
+  const v = Number(e.target.value);
+  if (Transport.inDemo) Demo.scrub(v);
+  else PlayMode.seekToIndex(v);
+  Transport.previewLabel(v);
+});
+seekSlider.addEventListener("change", (e) => {
+  const v = Number(e.target.value);
+  if (Transport.inDemo) Demo.commitScrub(v);
+});
 
 document.getElementById("nav-tuner-btn").addEventListener("click", () => Screens.show("tuner"));
 document.getElementById("tuner-back-btn").addEventListener("click", () => Screens.show("menu"));

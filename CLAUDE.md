@@ -241,6 +241,18 @@ JSON output.
   hides its mic-only rows, leaving just the metronome/BPM row.
   `exit()` stops and resets the play screen via `PlayMode.load`; `stop()` is teardown-only for
   navigation. `PlayMode.load` and `Screens.show` (leaving `play`) both call `Demo.stop()`.
+  `pause()`/`resume()` freeze/unfreeze playback (capture `_pausedT = ctx.currentTime - audioStart`,
+  kill the rAF loop + ringing notes + metronome; on resume, re-derive `audioStart` from `_pausedT`
+  and re-point `nextIdx`/`shownIdx`). `scrub(i)`/`commitScrub(i)` are the seek-slider hooks —
+  live drag pauses and repaints via `_renderAt(t)` (which does NOT touch the clock), release
+  seeks there and resumes iff playback was running when grabbed (`_scrubResume`).
+- `Transport` — the shared pause + seek bar (`#transport-bar` under the target panel, visible on
+  the practice surface AND during a demo). `inDemo` (the `.demo-mode` class) picks which it
+  drives: Demo's `togglePause`/`scrub`/`commitScrub`, or `PlayMode.togglePause()` (pauses mic
+  listening) / `PlayMode.seekToIndex(i)` (jumps `currentIndex`; notes skipped past keep a `null`
+  result and render neutral, not as a miss). `syncSlider()` keeps the thumb+label in step with
+  playback/practice progress (skipped while the slider has focus, i.e. mid-drag); called from
+  `Demo._loop`, `PlayMode.updateProgress`, and the seek/pause paths. `fmtTime()` → `m:ss`.
 - `MicDevices` — enumerates `audioinput` devices for the picker on the mic-gate screen (labels
   are blank until permission has been granted once) and remembers the last-picked device in
   `localStorage`.

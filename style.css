@@ -353,6 +353,22 @@ button:active { transform: scale(0.97); }
 
 .play-surface.hidden, .results.hidden, .mic-gate.hidden { display: none; }
 
+.transport-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 520px;
+  margin: 0 auto 22px;
+}
+.transport-bar input[type="range"] { flex: 1; min-width: 0; }
+.transport-bar #seek-label {
+  font-family: "Consolas", monospace;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+.transport-bar #transport-toggle { flex: none; }
+
 .target-panel {
   text-align: center;
   margin-bottom: 18px;

@@ -1157,6 +1157,19 @@ const PA_GOOD = 0.11;
 const PA_CENTS_TOL = 45;      // looser than gameplay's ±35 — timing is the challenge, not pitch
 const PA_POINTS = { perfect: 100, good: 60, ok: 30 };
 
+/* ===== DRAFT: guide-echo guard ============================================
+ * The guide track plays through the speakers and the mic picks it up, so the
+ * app can score its own playback. This samples the mic RMS the guide alone
+ * produces (during the countdown, when the player isn't meant to be playing
+ * yet) and then rejects any judging frame that isn't clearly louder than that
+ * baseline — i.e. the player has to actually be contributing signal.
+ * To delete: remove this block, the `echoGuard`/`guideBleedRms`/`_bleedTimer`
+ * state, `_calibrateBleed` + its call in `_countdownThen`, the guard check in
+ * `onFrame`, `_showGuard`, and the #pa-guard-btn wiring + HTML.
+ */
+const PA_ECHO_GUARD_MARGIN = 1.55; // mic RMS must exceed guideBleedRms × this to count
+/* ======================================================================== */
+
 const PlayAlong = {
   songId: null, song: null, notes: null, positions: null, playTimes: null,
   gemEls: [], tailEls: [],
@@ -1164,6 +1177,7 @@ const PlayAlong = {
   audioStart: 0, rate: 1, guide: true,
   nextAudioIdx: 0, _lastBeat: -1, _pausedT: 0,
   score: 0, shownScore: 0, combo: 0, maxCombo: 0, counts: null, judged: null,
+  echoGuard: true, guideBleedRms: 0, _bleedTimer: null, // DRAFT: guide-echo guard
 
   load(songId, song) {
     Demo.stop(); PlayMode.stop();
@@ -1207,6 +1221,7 @@ const PlayAlong = {
     this.score = 0; this.shownScore = 0; this.combo = 0; this.maxCombo = 0;
     this.counts = { perfect: 0, good: 0, ok: 0, miss: 0 };
     this.judged = new Array(this.notes.length).fill(false);
+    this.guideBleedRms = 0; // DRAFT: re-learned each run during the countdown
     document.getElementById("pa-score").textContent = "0";
     document.getElementById("pa-combo").classList.add("hidden");
     document.getElementById("pa-fever-fill").style.width = "0%";
@@ -1254,6 +1269,9 @@ const PlayAlong = {
     const el = document.getElementById("pa-countdown");
     const span = el.querySelector("span");
     el.classList.remove("hidden");
+    // DRAFT: guide-echo guard — learn the guide's mic bleed while the player waits.
+    if (this.echoGuard && this.guide && PitchEngine.ctx) this._calibrateBleed();
+    else { this.guideBleedRms = 0; this._showGuard(); }
     let n = 3;
     const tick = () => {
       if (n < 0) { el.classList.add("hidden"); done(); return; }
@@ -1264,6 +1282,44 @@ const PlayAlong = {
     };
     tick();
   },
+
+  /* ===== DRAFT: guide-echo guard ===== */
+  // Blip the song's opening pitches through the guide voice during the countdown
+  // and sample the mic RMS they produce — that's the "guide alone" baseline.
+  _calibrateBleed() {
+    this.guideBleedRms = 0;
+    this._showGuard("listening to your speakers…");
+    const ctx = GuitarVoice.ensure();
+    this.notes.slice(0, 5).forEach((nt, k) => {
+      const f = noteFrequency(nt.string, nt.fret, this.song.tuningOffsets);
+      GuitarVoice.note(f, ctx.currentTime + 0.2 + k * 0.42, 0.32, 0.42);
+    });
+    const samples = [];
+    if (this._bleedTimer) clearInterval(this._bleedTimer);
+    this._bleedTimer = setInterval(() => {
+      const r = lastPitchDebug.rms;
+      if (r > 0) samples.push(r);
+    }, 28);
+    setTimeout(() => {
+      clearInterval(this._bleedTimer);
+      this._bleedTimer = null;
+      samples.sort((a, b) => a - b);
+      const p75 = samples.length ? samples[Math.floor(samples.length * 0.75)] : 0;
+      this.guideBleedRms = p75 > MIN_RMS ? p75 : 0;
+      this._showGuard();
+    }, 2200);
+  },
+
+  _showGuard(msg) {
+    const el = document.getElementById("pa-guard-status");
+    if (!el) return;
+    if (!this.echoGuard || !this.guide) { el.textContent = ""; return; }
+    if (msg) { el.textContent = msg; return; }
+    el.textContent = this.guideBleedRms > 0
+      ? `echo guard on · baseline ${this.guideBleedRms.toFixed(3)}`
+      : "echo guard on · no bleed detected";
+  },
+  /* ===== end DRAFT ===== */
 
   _begin() {
     const ctx = GuitarVoice.ensure();
@@ -1340,6 +1396,9 @@ const PlayAlong = {
 
   onFrame(freq) {
     if (!this.running || this.paused || !freq) return;
+    // DRAFT: guide-echo guard — ignore frames no louder than the guide's own mic bleed.
+    if (this.echoGuard && this.guide && this.guideBleedRms > 0 &&
+        lastPitchDebug.rms < this.guideBleedRms * PA_ECHO_GUARD_MARGIN) return;
     const now = this._clockT();
     const win = PA_HIT_WINDOW / this.rate;
     for (let i = 0; i < this.notes.length; i++) {
@@ -1500,6 +1559,7 @@ const PlayAlong = {
     this.paused = false;
     if (this.rafId) cancelAnimationFrame(this.rafId);
     this.rafId = null;
+    if (this._bleedTimer) { clearInterval(this._bleedTimer); this._bleedTimer = null; } // DRAFT
     Metronome.stop();
     if (GuitarVoice.ctx) GuitarVoice.panic();
   },
@@ -2252,6 +2312,13 @@ document.getElementById("pa-guide-btn").addEventListener("click", (e) => {
   PlayAlong.guide = !PlayAlong.guide;
   e.currentTarget.classList.toggle("active", PlayAlong.guide);
   e.currentTarget.textContent = PlayAlong.guide ? "🔊 Guide" : "🔇 Guide";
+  PlayAlong._showGuard(); // DRAFT
+});
+// DRAFT: guide-echo guard toggle
+document.getElementById("pa-guard-btn").addEventListener("click", (e) => {
+  PlayAlong.echoGuard = !PlayAlong.echoGuard;
+  e.currentTarget.classList.toggle("active", PlayAlong.echoGuard);
+  PlayAlong._showGuard();
 });
 
 boot();

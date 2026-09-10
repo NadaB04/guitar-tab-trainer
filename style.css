@@ -996,7 +996,16 @@ button:active { transform: scale(0.97); }
 }
 .pa-ctl-row { display: flex; align-items: center; gap: 8px; }
 .pa-ctl-row input[type="range"] { width: 130px; }
-#pa-guide-btn.active { color: var(--green-bright); border-color: var(--green-bright); }
+#pa-guide-btn.active, #pa-guard-btn.active { color: var(--green-bright); border-color: var(--green-bright); }
+.pa-guard-status {
+  max-width: 640px;
+  margin: 6px auto 0;
+  font-family: "Consolas", monospace;
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  text-align: center;
+  min-height: 0.9rem;
+}
 .pa-progress {
   flex: 1;
   min-width: 0;

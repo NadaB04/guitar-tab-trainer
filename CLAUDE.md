@@ -267,6 +267,13 @@ a song. Scripts for the two fallbacks are throwaway Node in the session scratchp
   self-remove on `animationend`; `_pulse` flashes `.pa-hit-glow` per beat. `_finish` → letter
   grade (weighted hit quality), high score in `localStorage` (`sht_hi_<songId>`), stats grid.
   `speed` (50–100%) and `guide` (🔊/🔇) are the only knobs; speed applies on (re)start.
+  **DRAFT — guide-echo guard** (`echoGuard`, 🛡 button, all lines tagged `// DRAFT` + a fenced
+  const block): the guide track leaks from the speakers into the mic, so the app could score its
+  own playback. `_calibrateBleed` blips the song's opening through the guide during the countdown
+  and samples the mic RMS it produces (`guideBleedRms`); `onFrame` then rejects any frame not
+  ≥ `guideBleedRms × PA_ECHO_GUARD_MARGIN`. It's a relative level gate, not real echo
+  cancellation — play louder than your speakers, or just turn the guide off / use headphones.
+  Verified in-sim: guide-bleed-only → 0 points, real (louder) input → scores. Easy to rip out.
 - `Transport` — the shared pause button + **minimap** seek bar (`#transport-bar` under the target
   panel, visible on the practice surface AND during a demo). `inDemo` (the `.demo-mode` class)
   picks which it drives: Demo's `togglePause`/`scrub`/`commitScrub`, or `PlayMode.togglePause()`

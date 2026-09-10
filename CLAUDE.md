@@ -267,8 +267,13 @@ a song. Scripts for the two fallbacks are throwaway Node in the session scratchp
   self-remove on `animationend`; `_pulse` flashes `.pa-hit-glow` per beat. `_finish` → letter
   grade (weighted hit quality), high score in `localStorage` (`sht_hi_<songId>`), stats grid.
   Knobs: a **BPM** tempo slider (`_setupSpeed` sets range to 0.5×–1.5× the song's bpm — you can
-  push *past* the original; `rate = chosenBpm / song.bpm`, applied on (re)start) and `guide`
-  (🔊/🔇).
+  push *past* the original; `rate = chosenBpm / song.bpm`; changes apply **live** mid-song via
+  `_setTempoLive`, which re-derives `audioStart` from the current position in the song's own
+  timeline; the slider keeps its value across restarts of the same song), `guide` (🔊/🔇), and a
+  seekable **minimap** (`#pa-minimap`, own lean copy of the Transport one — laid out by each
+  note's *original* time so it doesn't reflow on tempo change). `_seekTo(frac)` jumps there: notes
+  now behind are flagged judged (no retro-miss), notes re-opened get their gem reset, combo
+  resets — score is left alone, it's a practice aid.
   **DRAFT — guide-echo guard** (`echoGuard`, 🛡 button, all lines tagged `// DRAFT` + a fenced
   const block): the guide track leaks from the speakers into the mic, so the app could score its
   own playback. `_calibrateBleed` blips the song's opening through the guide during the countdown

@@ -1177,6 +1177,7 @@ const PlayAlong = {
   audioStart: 0, rate: 1, guide: true,
   nextAudioIdx: 0, _lastBeat: -1, _pausedT: 0,
   score: 0, shownScore: 0, combo: 0, maxCombo: 0, counts: null, judged: null,
+  _speedForSong: null, _origTotal: 1, _scrubbing: false,
   echoGuard: true, guideBleedRms: 0, _bleedTimer: null, // DRAFT: guide-echo guard
 
   load(songId, song) {
@@ -1188,8 +1189,11 @@ const PlayAlong = {
     document.getElementById("pa-song-name").textContent = `${song.title} — ${song.artist}`;
     document.getElementById("pa-results").classList.add("hidden");
     document.getElementById("pa-error").textContent = "";
+    const last = this.notes[this.notes.length - 1];
+    this._origTotal = ((last && (last.time || 0)) + ((last && last.duration) || 0)) || 1;
     this._setupSpeed();
     this._buildTrack();
+    this._buildMinimap();
     this._resetScore();
 
     if (PitchEngine.ctx) {
@@ -1226,9 +1230,63 @@ const PlayAlong = {
     document.getElementById("pa-score").textContent = "0";
     document.getElementById("pa-combo").classList.add("hidden");
     document.getElementById("pa-fever-fill").style.width = "0%";
-    document.getElementById("pa-progress-fill").style.width = "0%";
+    document.getElementById("pa-mm-head").style.left = "0%";
+    document.getElementById("pa-mm-view").style.width = "0%";
     document.getElementById("pa-stage").classList.remove("pa-feveron");
     document.getElementById("pa-judgments").innerHTML = "";
+  },
+
+  // A scaled-down overview of the whole song (like the practice-mode minimap) —
+  // click or drag anywhere on it to jump there. Laid out by each note's *original*
+  // time so it doesn't reflow when you change the tempo.
+  _buildMinimap() {
+    const rows = STRING_ORDER.length;
+    document.getElementById("pa-mm-notes").innerHTML = this.notes.map((n) => {
+      const x = (((n.time || 0) / this._origTotal) * 100).toFixed(2);
+      const y = (((STRING_ORDER.indexOf(n.string) + 0.5) / rows) * 100).toFixed(1);
+      return `<i style="left:${x}%;top:${y}%;background:${LANE_COLORS[n.string]}"></i>`;
+    }).join("");
+  },
+
+  _updateMinimap(t) {
+    const songT = t * this.rate; // original-tempo seconds since the first note
+    document.getElementById("pa-mm-head").style.left =
+      `${(Math.max(0, Math.min(1, songT / this._origTotal)) * 100).toFixed(2)}%`;
+    // view band = the slice of the song currently on screen in the main track (in original-time)
+    const vpW = (document.querySelector(".pa-viewport") || {}).clientWidth || 700;
+    const L = Math.max(0, ((songT - PLAYHEAD_X / PIXELS_PER_SECOND) / this._origTotal) * 100);
+    const R = Math.min(100, ((songT + (vpW - PLAYHEAD_X) / PIXELS_PER_SECOND) / this._origTotal) * 100);
+    const band = document.getElementById("pa-mm-view");
+    band.style.left = `${L.toFixed(2)}%`;
+    band.style.width = `${Math.max(0, R - L).toFixed(2)}%`;
+  },
+
+  // Jump to `frac` (0–1) of the song. Notes now behind you are marked judged (no retro-miss);
+  // notes ahead re-open. Combo resets. Score is left as-is — seek is a practice aid.
+  _seekTo(frac) {
+    if (!this.running) return;
+    const ctx = SFX.ctx || GuitarVoice.ctx;
+    const songT = Math.max(0, Math.min(1, frac)) * this._origTotal;
+    const clockNew = songT / this.rate;
+    this.audioStart = ctx.currentTime - clockNew;
+    this.nextAudioIdx = 0;
+    while (this.nextAudioIdx < this.notes.length && this.playTimes[this.nextAudioIdx] < clockNew) this.nextAudioIdx++;
+    const win = PA_HIT_WINDOW / this.rate;
+    for (let i = 0; i < this.notes.length; i++) {
+      const wasJudged = this.judged[i];
+      this.judged[i] = this.playTimes[i] < clockNew - win;
+      if (wasJudged && !this.judged[i]) {
+        // re-opened a note we'd already scored/missed — un-count it and reset its gem
+        const g = this.gemEls[i];
+        if (g) g.classList.remove("pa-gem-hit", "pa-gem-miss");
+      }
+    }
+    // recount from the judged flags is overkill; just zero the streak and let play continue
+    this.combo = 0;
+    this._updateCombo();
+    this._lastBeat = -1;
+    document.getElementById("pa-strip").style.transform = `translateX(${PLAYHEAD_X - this._xAt(clockNew)}px)`;
+    this._updateMinimap(clockNew);
   },
 
   _positions() {
@@ -1323,14 +1381,21 @@ const PlayAlong = {
   /* ===== end DRAFT ===== */
 
   // The tempo slider is a real BPM: min = half the song's, max = 1.5× (so you can push past the
-  // original to challenge yourself). rate = chosenBpm / songBpm drives scroll + guide + metronome.
+  // original to challenge yourself). rate = chosenBpm / songBpm drives scroll + guide + metronome,
+  // and changes take effect live while you play (`_setTempoLive`).
   _setupSpeed() {
     const bpm = this.song.bpm || 120;
     const slider = document.getElementById("pa-speed");
     slider.step = 1;
     slider.min = Math.max(40, Math.round(bpm * 0.5));
     slider.max = Math.round(bpm * 1.5);
-    slider.value = bpm; // exactly the original — step 1 keeps it on-grid
+    if (this._speedForSong !== this.songId) {
+      slider.value = bpm; // fresh song → start at its real tempo
+      this._speedForSong = this.songId;
+    } else {
+      // same song restarted → keep the tempo you were using, clamped to the range
+      slider.value = Math.max(Number(slider.min), Math.min(Number(slider.max), Number(slider.value) || bpm));
+    }
     this._updateSpeedLabel();
   },
 
@@ -1342,6 +1407,23 @@ const PlayAlong = {
     el.classList.toggle("pa-speed-fast", v > orig);
     el.classList.toggle("pa-speed-slow", v < orig);
     el.title = `original tempo ${orig} BPM`;
+  },
+
+  // Apply a tempo change without a restart: keep the current position (in the song's own
+  // timeline), re-scale playTimes, re-derive audioStart, re-point the audio scheduler + metronome.
+  _setTempoLive() {
+    const newRate = Number(document.getElementById("pa-speed").value) / (this.song.bpm || 120);
+    if (!this.running || this.paused || !this.playTimes) { this.rate = newRate; return; }
+    const ctx = SFX.ctx || GuitarVoice.ctx;
+    const songSeconds = this._clockT() * this.rate;      // where we are, in original-tempo seconds
+    this.rate = newRate;
+    this.playTimes = this.notes.map((n) => (n.time || 0) / this.rate);
+    const clockNew = songSeconds / this.rate;
+    this.audioStart = ctx.currentTime - clockNew;
+    this.nextAudioIdx = 0;
+    while (this.nextAudioIdx < this.notes.length && this.playTimes[this.nextAudioIdx] < clockNew) this.nextAudioIdx++;
+    this._lastBeat = -1;
+    Metronome.setBpm(Math.max(30, Math.round((this.song.bpm || 120) * this.rate)));
   },
 
   _begin() {
@@ -1391,7 +1473,7 @@ const PlayAlong = {
     document.getElementById("pa-strip").style.transform = `translateX(${PLAYHEAD_X - this._xAt(t)}px)`;
 
     const total = this.playTimes[this.playTimes.length - 1] || 1;
-    document.getElementById("pa-progress-fill").style.width = `${Math.max(0, Math.min(100, (t / total) * 100))}%`;
+    this._updateMinimap(t);
 
     const beat = Math.floor((t * (this.song.bpm || 120) * this.rate) / 60);
     if (t > 0 && beat !== this._lastBeat) { this._lastBeat = beat; this._pulse(); }
@@ -2328,7 +2410,43 @@ document.getElementById("pa-restart-btn").addEventListener("click", () => PlayAl
 document.getElementById("pa-again-btn").addEventListener("click", () => PlayAlong.load(PlayAlong.songId, PlayAlong.song));
 document.getElementById("pa-pause-btn").addEventListener("click", () => PlayAlong.togglePause());
 document.getElementById("pa-start-btn").addEventListener("click", () => PlayAlong.beginListening());
-document.getElementById("pa-speed").addEventListener("input", () => PlayAlong._updateSpeedLabel());
+document.getElementById("pa-speed").addEventListener("input", () => {
+  PlayAlong._updateSpeedLabel();
+  PlayAlong._setTempoLive();
+});
+// Play-Along minimap seek — click or drag to jump to a part of the song
+const paMinimap = document.getElementById("pa-minimap");
+const paFrac = (clientX) => {
+  const r = paMinimap.getBoundingClientRect();
+  return Math.max(0, Math.min(1, (clientX - r.left) / r.width));
+};
+let paScrub = false;
+paMinimap.addEventListener("pointerdown", (e) => {
+  if (!PlayAlong.running) return;
+  paScrub = true;
+  try { paMinimap.setPointerCapture(e.pointerId); } catch (_) {}
+  if (GuitarVoice.ctx) GuitarVoice.panic();
+  PlayAlong._seekTo(paFrac(e.clientX));
+});
+paMinimap.addEventListener("pointermove", (e) => { if (paScrub) PlayAlong._seekTo(paFrac(e.clientX)); });
+paMinimap.addEventListener("pointerup", (e) => {
+  if (!paScrub) return;
+  paScrub = false;
+  try { paMinimap.releasePointerCapture(e.pointerId); } catch (_) {}
+  if (GuitarVoice.ctx) GuitarVoice.panic();
+});
+paMinimap.addEventListener("keydown", (e) => {
+  if (!PlayAlong.running || !PlayAlong._origTotal) return;
+  const cur = (PlayAlong._clockT() * PlayAlong.rate) / PlayAlong._origTotal;
+  let f = cur;
+  if (e.key === "ArrowRight") f += 0.03;
+  else if (e.key === "ArrowLeft") f -= 0.03;
+  else if (e.key === "Home") f = 0;
+  else if (e.key === "End") f = 0.98;
+  else return;
+  e.preventDefault();
+  PlayAlong._seekTo(f);
+});
 document.getElementById("pa-guide-btn").addEventListener("click", (e) => {
   PlayAlong.guide = !PlayAlong.guide;
   e.currentTarget.classList.toggle("active", PlayAlong.guide);

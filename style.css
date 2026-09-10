@@ -254,18 +254,17 @@ button:active { transform: scale(0.97); }
 .mic-gate {
   background: var(--bg-elevated);
   border-radius: 12px;
-  padding: 60px 30px;
-  text-align: center;
-}
-.mic-gate p {
-  color: var(--text-dim);
-  max-width: 420px;
-  margin: 0 auto 22px;
+  padding: 40px 30px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
 }
 .mic-error {
-  color: var(--red) !important;
-  margin-top: 16px !important;
+  color: var(--red);
+  margin: 6px 0 0;
   font-size: 0.85rem;
+  text-align: center;
 }
 
 .mic-device-row {
@@ -273,18 +272,20 @@ button:active { transform: scale(0.97); }
   align-items: center;
   justify-content: center;
   gap: 10px;
-  margin-bottom: 22px;
-  font-size: 0.85rem;
+  max-width: 340px;
+  margin: 0 auto 22px;
+  font-size: 0.78rem;
   color: var(--text-dim);
 }
 .mic-device-row select {
+  flex: 1;
+  min-width: 0;
   background: var(--bg-highlight);
   color: var(--text);
   border: 1px solid #444;
   border-radius: 6px;
-  padding: 7px 10px;
-  font-size: 0.85rem;
-  max-width: 260px;
+  padding: 6px 8px;
+  font-size: 0.78rem;
 }
 
 .level-meter-row {
@@ -349,31 +350,6 @@ button:active { transform: scale(0.97); }
 }
 
 .listening-tools.hidden { display: none; }
-
-.calibration-panel {
-  background: var(--bg-elevated);
-  border-radius: 12px;
-  padding: 40px 30px;
-  text-align: center;
-}
-.calibration-panel.hidden { display: none; }
-.calibration-panel p {
-  color: var(--text-dim);
-  max-width: 440px;
-  margin: 0 auto 22px;
-}
-.calib-note {
-  font-size: 3rem;
-  font-weight: 800;
-  margin-bottom: 6px;
-  min-height: 3.5rem;
-}
-.calib-detail {
-  color: var(--text-dim);
-  font-family: "Consolas", monospace;
-  font-size: 0.9rem;
-  margin-bottom: 26px;
-}
 
 .play-surface.hidden, .results.hidden, .mic-gate.hidden { display: none; }
 
@@ -790,4 +766,5 @@ button:active { transform: scale(0.97); }
 #screen-play:has(.demo-mode) #play-song-progress { visibility: hidden; }
 /* during a demo the listening-tools bar shows only the metronome/BPM row */
 #screen-play:has(.demo-mode) .level-meter-row,
+#screen-play:has(.demo-mode) .mic-device-row,
 #screen-play:has(.demo-mode) .gain-row { display: none; }

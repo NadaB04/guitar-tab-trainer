@@ -36,8 +36,13 @@ of `PlayMode`/`Tuner` isn't the destination screen, since both share the one `Pi
   badge from `localStorage` (`completions`). (`tuningKey`/`stringLabel` still exist — the Tuner
   uses them — just not the menu.)
 - `play` — the practice screen. Has sub-states toggled by hiding/showing divs rather than
-  separate screens: `mic-gate` → `calibration-panel` → `play-surface` → `play-results`. The
-  `play-surface` is also reused by the `Demo` ("Hear it") mode with a `.demo-mode` class.
+  separate screens: `mic-gate` (just two buttons: Start Listening / Hear it first) →
+  `play-surface` → `play-results`. `beginListening()` goes straight to `beginPracticing()` on a
+  successful `getUserMedia` — there's no separate calibration step; the play surface's own live
+  tuner readout + the input meter in `listening-tools` are the "is my mic working?" feedback, and
+  the standalone Tuner screen (top-bar button) is one click away for a proper check. The mic
+  device picker lives in `listening-tools` (real labels, post-permission; `#mic-device-select`
+  `change` → `PlayMode.switchDevice`). The `play-surface` is also reused by `Demo` with `.demo-mode`.
 - `tuner` — standalone chromatic tuner (see `Tuner` below). Has its own `mic-gate` → surface flow
   but reuses the same `PitchEngine` session if `play` already started one (no re-prompt).
 
@@ -160,8 +165,8 @@ a song. Scripts for the two fallbacks are throwaway Node in the session scratchp
   Boost slider) before analysis, since a direct instrument signal is often much quieter than a
   voice. Explicitly disables the browser's echo-cancellation/noise-suppression/auto-gain (they're
   tuned for speech and distort instrument harmonics). Calls `onFrame(freqOrNull)` every frame — the
-  callback is swapped depending on which screen is active (`Calibration.onFrame`,
-  `PlayMode.onPitchFrame`, or `Tuner.onFrame`).
+  callback is swapped depending on which screen is active (`PlayMode.onPitchFrame` or
+  `Tuner.onFrame`).
 - `autoCorrelate(buf, sampleRate)` — ACF2+ style autocorrelation pitch detector: a _blind_ global
   search for whatever single frequency best explains the whole buffer. Two independent gates before
   it trusts a frequency: `MIN_RMS` (raw loudness floor) and `MIN_CONFIDENCE` (`maxVal / c[0]`, i.e.
@@ -177,10 +182,6 @@ a song. Scripts for the two fallbacks are throwaway Node in the session scratchp
   blended, wrong frequency that satisfies no real note. Since gameplay always knows the exact
   target frequency in advance, `PlayMode.targetedMatch` uses this to sidestep that failure mode
   entirely — see below.
-- `Calibration` — ungated, continuous "here's what I currently hear" readout (note name, Hz,
-  clarity, level) shown before practice starts, so it's obvious whether the pipeline hears
-  anything at all vs. hears it but rejects it. Exists specifically because mic/interface signal
-  chains vary wildly and blind threshold-tuning wasn't working — see "Known tuning constants" below.
 - `PlayMode` — practice state machine. `onPitchFrame` compares detected pitch (in cents, via
   `centsBetween`) against the current target note's frequency (`noteFrequency(string, fret)`).
   A frame counts as a match if _either_ the blind `autoCorrelate` result lands in tolerance, _or_
@@ -272,7 +273,7 @@ a song. Scripts for the two fallbacks are throwaway Node in the session scratchp
 - `Tuner` — standalone chromatic-per-string tuner (`tuner` screen). Its tuning picker
   (`buildTunings`) is derived from whatever tunings actually appear in `SONGS` (same grouping as
   the menu's tuning filter, so the two always stay in sync automatically) — not a separate
-  hardcoded list. Live/ungated like `Calibration`, no `CONFIRM_FRAMES` debounce. Auto-detects which
+  hardcoded list. Live/ungated (no `CONFIRM_FRAMES` debounce). Auto-detects which
   of the 6 open strings the incoming pitch is nearest to in cents (`onFrame`), or locks to a
   specific string if the player clicks one (`lockedString`) — useful when a wildly out-of-tune
   string would otherwise auto-target the wrong one. Uses its own tighter `TUNER_CENTS_TOLERANCE`
@@ -284,9 +285,8 @@ navigation away from their screen) only pause — they don't close `PitchEngine`
 `AudioContext`/stream, and both null out `PitchEngine.onFrame` unconditionally, so whichever of
 `play`/`tuner` is entered next just reassigns it (`PlayMode.load`/`Tuner.enter`) rather than
 needing to coordinate who "owns" the callback. Both check `PitchEngine.ctx`: if a session is
-already running they skip straight past `mic-gate`/`calibration-panel` to their surface. So the
-permission/calibration flow only happens once per page load, not once per song or per screen
-visit. `MicDevices.populate`/`selectedId` take an optional `selectId` param (defaulting to the Play
+already running they skip straight past `mic-gate` to their surface. So the permission prompt only
+happens once per page load, not once per song or per screen visit. `MicDevices.populate`/`selectedId` take an optional `selectId` param (defaulting to the Play
 screen's `#mic-device-select`) so the Tuner's `#tuner-mic-device-select` can reuse the same
 enumerate/remember logic against its own `<select>`. If a genuine full mic teardown is ever needed,
 call `PitchEngine.stop()` directly — it's no longer invoked automatically anywhere.
@@ -306,7 +306,7 @@ manually in a loop when checking results programmatically.
 `*_COOLDOWN_MS`, `DEFAULT_INPUT_GAIN`, `TARGET_CORR_CONFIDENCE`, `TUNER_CENTS_TOLERANCE`.
 
 This environment has no real mic. When the user reports a detection problem: (1) ask what the
-calibration/tuner readout actually shows (right note/Hz but not advancing? nothing at all?
+play-surface tuner readout (or the standalone Tuner) actually shows (right note/Hz but not advancing? nothing at all?
 unstable/wrong note?) — that separates a device/routing issue from detection logic; (2) build a
 synthetic repro of that _specific_ scenario (fake `MediaStream` from an oscillator, or hand-build a
 `Float32Array` and call `autoCorrelate` on it — see "Testing without hardware") before touching

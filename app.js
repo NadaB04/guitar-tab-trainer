@@ -293,32 +293,12 @@ const MicDevices = {
 };
 
 /* ---------------------------------------------------------------------- *
- * Calibration — raw, ungated pitch feedback so it's obvious whether the
- * mic pipeline hears anything at all, before gating kicks in for practice.
- * ---------------------------------------------------------------------- */
-
-const Calibration = {
-  onFrame(freq) {
-    const noteEl = document.getElementById("calib-note");
-    const detailEl = document.getElementById("calib-detail");
-    if (freq) {
-      noteEl.textContent = freqToNoteName(freq);
-      detailEl.textContent =
-        `${freq.toFixed(1)} Hz · clarity ${lastPitchDebug.confidence.toFixed(2)} · level ${lastPitchDebug.rms.toFixed(3)}`;
-    } else {
-      noteEl.textContent = "—";
-      detailEl.textContent =
-        `Waiting for a note… (level ${lastPitchDebug.rms.toFixed(3)}, clarity ${lastPitchDebug.confidence.toFixed(2)})`;
-    }
-  },
-};
-
-/* ---------------------------------------------------------------------- *
  * TUNER — standalone chromatic-per-string tuner. Its tuning list is pulled
- * straight from whatever tunings actually appear in the song library (same
- * grouping as the menu's tuning filter), so "the different options" it can
- * tune to always matches what's playable. Live/ungated like Calibration —
- * no CONFIRM_FRAMES debounce, since a tuner should feel instantly responsive.
+ * straight from whatever tunings actually appear in the song library (via
+ * tuningKey), so "the different options" it can tune to always matches
+ * what's playable. Live/ungated — no CONFIRM_FRAMES debounce, since a tuner
+ * should feel instantly responsive. Also serves as the "is my mic working?"
+ * check now that the play screen has no separate calibration step.
  * ---------------------------------------------------------------------- */
 
 const TUNER_CENTS_TOLERANCE = 8; // much tighter than gameplay's MATCH_CENTS_TOLERANCE — real tuning precision
@@ -827,7 +807,6 @@ const Demo = {
     this.playTimes = this.notes.map((n) => (n.time || 0) / this.rate);
 
     document.getElementById("mic-gate").classList.add("hidden");
-    document.getElementById("calibration-panel").classList.add("hidden");
     document.getElementById("listening-tools").classList.remove("hidden"); // keep the BPM select reachable
     document.getElementById("play-results").classList.add("hidden");
     const surface = document.getElementById("play-surface");
@@ -1347,10 +1326,8 @@ const PlayMode = {
     this.updateProgress();
     this.setupMetronome(song.bpm);
 
-    document.getElementById("calibration-panel").classList.add("hidden");
-
     if (PitchEngine.ctx) {
-      // Mic already granted and running from a previous song/restart — reuse it, skip calibration.
+      // Mic already granted and running from a previous song/restart — go straight in.
       document.getElementById("mic-gate").classList.add("hidden");
       document.getElementById("listening-tools").classList.remove("hidden");
       document.getElementById("play-surface").classList.remove("hidden");
@@ -1375,16 +1352,25 @@ const PlayMode = {
       MicDevices.populate(); // labels are only readable once permission is granted
       document.getElementById("mic-gate").classList.add("hidden");
       document.getElementById("listening-tools").classList.remove("hidden");
-      document.getElementById("calibration-panel").classList.remove("hidden");
-      PitchEngine.onFrame = (freq) => Calibration.onFrame(freq);
+      this.beginPracticing(); // straight into the song — the play surface has a live tuner readout
     } catch (err) {
       document.getElementById("mic-error").textContent =
-        "Couldn't access that microphone. Check browser permissions, that a mic is connected, and try a different input device above.";
+        "Couldn't access that microphone. Check browser permissions, that a mic is connected, and pick a different input under Mic once you're in.";
+    }
+  },
+
+  // Switching the mic device mid-session (from the picker in the listening-tools bar).
+  async switchDevice(deviceId) {
+    try {
+      await PitchEngine.start(null, deviceId);
+      MicDevices.remember(deviceId);
+      PitchEngine.onFrame = (freq) => this.onPitchFrame(freq);
+    } catch (err) {
+      document.getElementById("mic-error").textContent = "Couldn't switch to that microphone.";
     }
   },
 
   beginPracticing() {
-    document.getElementById("calibration-panel").classList.add("hidden");
     document.getElementById("play-surface").classList.remove("hidden");
     PitchEngine.onFrame = (freq) => this.onPitchFrame(freq);
     this.listening = true;
@@ -1397,8 +1383,8 @@ const PlayMode = {
 
   stop() {
     // Pause only — leave the mic stream/AudioContext running so switching songs
-    // (menu -> another song) doesn't re-trigger the mic-permission gate or
-    // calibration screen. PitchEngine keeps its rAF loop going harmlessly idle.
+    // (menu -> another song) doesn't re-trigger the mic-permission gate.
+    // PitchEngine keeps its rAF loop going harmlessly idle.
     this.listening = false;
     PitchEngine.onFrame = null;
     Metronome.stop();
@@ -1779,7 +1765,9 @@ const PlayMode = {
  * ---------------------------------------------------------------------- */
 
 document.getElementById("mic-start-btn").addEventListener("click", () => PlayMode.beginListening());
-document.getElementById("calib-done-btn").addEventListener("click", () => PlayMode.beginPracticing());
+document.getElementById("mic-device-select").addEventListener("change", (e) => {
+  if (PitchEngine.ctx) PlayMode.switchDevice(e.target.value);
+});
 document.getElementById("gain-slider").addEventListener("input", (e) => {
   const value = Number(e.target.value);
   PitchEngine.setGain(value);

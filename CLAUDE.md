@@ -266,7 +266,9 @@ a song. Scripts for the two fallbacks are throwaway Node in the session scratchp
   the meter, `pa-feveron` at 100. Floating `.pa-judge` / `.pa-score-pop` spawned per hit and
   self-remove on `animationend`; `_pulse` flashes `.pa-hit-glow` per beat. `_finish` → letter
   grade (weighted hit quality), high score in `localStorage` (`sht_hi_<songId>`), stats grid.
-  `speed` (50–100%) and `guide` (🔊/🔇) are the only knobs; speed applies on (re)start.
+  Knobs: a **BPM** tempo slider (`_setupSpeed` sets range to 0.5×–1.5× the song's bpm — you can
+  push *past* the original; `rate = chosenBpm / song.bpm`, applied on (re)start) and `guide`
+  (🔊/🔇).
   **DRAFT — guide-echo guard** (`echoGuard`, 🛡 button, all lines tagged `// DRAFT` + a fenced
   const block): the guide track leaks from the speakers into the mic, so the app could score its
   own playback. `_calibrateBleed` blips the song's opening through the guide during the countdown

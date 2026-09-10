@@ -1188,6 +1188,7 @@ const PlayAlong = {
     document.getElementById("pa-song-name").textContent = `${song.title} — ${song.artist}`;
     document.getElementById("pa-results").classList.add("hidden");
     document.getElementById("pa-error").textContent = "";
+    this._setupSpeed();
     this._buildTrack();
     this._resetScore();
 
@@ -1321,9 +1322,31 @@ const PlayAlong = {
   },
   /* ===== end DRAFT ===== */
 
+  // The tempo slider is a real BPM: min = half the song's, max = 1.5× (so you can push past the
+  // original to challenge yourself). rate = chosenBpm / songBpm drives scroll + guide + metronome.
+  _setupSpeed() {
+    const bpm = this.song.bpm || 120;
+    const slider = document.getElementById("pa-speed");
+    slider.step = 1;
+    slider.min = Math.max(40, Math.round(bpm * 0.5));
+    slider.max = Math.round(bpm * 1.5);
+    slider.value = bpm; // exactly the original — step 1 keeps it on-grid
+    this._updateSpeedLabel();
+  },
+
+  _updateSpeedLabel() {
+    const orig = this.song.bpm || 120;
+    const v = Number(document.getElementById("pa-speed").value);
+    const el = document.getElementById("pa-speed-val");
+    el.textContent = v > orig ? `${v} BPM ⚡` : `${v} BPM`;
+    el.classList.toggle("pa-speed-fast", v > orig);
+    el.classList.toggle("pa-speed-slow", v < orig);
+    el.title = `original tempo ${orig} BPM`;
+  },
+
   _begin() {
     const ctx = GuitarVoice.ensure();
-    this.rate = Number(document.getElementById("pa-speed").value) / 100;
+    this.rate = Number(document.getElementById("pa-speed").value) / (this.song.bpm || 120);
     this.playTimes = this.notes.map((n) => (n.time || 0) / this.rate);
     this.running = true;
     this.paused = false;
@@ -2305,9 +2328,7 @@ document.getElementById("pa-restart-btn").addEventListener("click", () => PlayAl
 document.getElementById("pa-again-btn").addEventListener("click", () => PlayAlong.load(PlayAlong.songId, PlayAlong.song));
 document.getElementById("pa-pause-btn").addEventListener("click", () => PlayAlong.togglePause());
 document.getElementById("pa-start-btn").addEventListener("click", () => PlayAlong.beginListening());
-document.getElementById("pa-speed").addEventListener("input", (e) => {
-  document.getElementById("pa-speed-val").textContent = `${e.target.value}%`;
-});
+document.getElementById("pa-speed").addEventListener("input", () => PlayAlong._updateSpeedLabel());
 document.getElementById("pa-guide-btn").addEventListener("click", (e) => {
   PlayAlong.guide = !PlayAlong.guide;
   e.currentTarget.classList.toggle("active", PlayAlong.guide);

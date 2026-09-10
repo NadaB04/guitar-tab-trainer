@@ -996,6 +996,9 @@ button:active { transform: scale(0.97); }
 }
 .pa-ctl-row { display: flex; align-items: center; gap: 8px; }
 .pa-ctl-row input[type="range"] { width: 130px; }
+#pa-speed-val { min-width: 74px; font-variant-numeric: tabular-nums; }
+#pa-speed-val.pa-speed-fast { color: #ff9a3e; text-shadow: 0 0 10px rgba(255, 154, 62, 0.6); font-weight: 700; }
+#pa-speed-val.pa-speed-slow { color: #4fb3f0; }
 #pa-guide-btn.active, #pa-guard-btn.active { color: var(--green-bright); border-color: var(--green-bright); }
 .pa-guard-status {
   max-width: 640px;

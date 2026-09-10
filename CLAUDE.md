@@ -27,10 +27,14 @@ script). `tools/` holds the checked-in song importer. `songs/` is the JSON libra
 **Screens** (`Screens.show(id)` toggles `.active` on `#screen-<id>`; also pauses/resumes whichever
 of `PlayMode`/`Tuner` isn't the destination screen, since both share the one `PitchEngine` session):
 
-- `menu` — song grid, loaded from `songs/manifest.json` + one JSON file per song. A tuning-filter
-  chip row above the grid (`renderTuningFilters`) groups songs by `tuningKey(song.tuning)` (a
-  display string, e.g. `"e B G D A E"` — high-to-low, high-e lowercased, same convention as
-  `stringLabel`); selection persists in `localStorage` (`activeTuningFilter`).
+- `menu` — song grid, loaded from `songs/manifest.json` + one JSON file per song. An **artist**
+  filter chip row above the grid (`renderArtistFilters`, hidden when there's only one artist)
+  groups by `data.artist`; selection persists in `localStorage` (`activeArtistFilter`). Each card
+  cover is `melodyPreviewHTML(data)` — the song's own melody drawn as tiny lane-coloured ticks
+  (x = `time`, y = `string`), same idea as the transport minimap, so every cover is unique. Meta
+  line: colour-coded difficulty pill + `fmtTime(songDuration(data))` + note count + a "Cleared N×"
+  badge from `localStorage` (`completions`). (`tuningKey`/`stringLabel` still exist — the Tuner
+  uses them — just not the menu.)
 - `play` — the practice screen. Has sub-states toggled by hiding/showing divs rather than
   separate screens: `mic-gate` → `calibration-panel` → `play-surface` → `play-results`. The
   `play-surface` is also reused by the `Demo` ("Hear it") mode with a `.demo-mode` class.

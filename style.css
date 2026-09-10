@@ -75,39 +75,37 @@ html, body {
 .tagline {
   color: var(--text-dim);
   margin-top: 0;
-  margin-bottom: 28px;
+  margin-bottom: 24px;
   font-size: 0.95rem;
 }
 
-/* TUNING FILTER */
-.tuning-filter-row {
+/* FILTER ROW (by artist) */
+.filter-row {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
-  margin-bottom: 24px;
+  margin-bottom: 26px;
 }
-.tuning-chip {
+.filter-row:empty { display: none; }
+.filter-chip {
   background: var(--bg-elevated);
   color: var(--text-dim);
   border: 1px solid transparent;
   border-radius: 999px;
   padding: 7px 14px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  font-family: "Consolas", monospace;
+  font-size: 0.8rem;
+  font-weight: 600;
   cursor: pointer;
   transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease;
-  letter-spacing: 0.3px;
 }
-.tuning-chip:hover { color: var(--text); border-color: #555; }
-.tuning-chip .count {
-  font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+.filter-chip:hover { color: var(--text); border-color: #555; }
+.filter-chip .count {
   color: inherit;
-  opacity: 0.65;
+  opacity: 0.55;
   font-weight: 400;
-  margin-left: 5px;
+  margin-left: 6px;
 }
-.tuning-chip.active {
+.filter-chip.active {
   background: rgba(29, 185, 84, 0.15);
   border-color: var(--green-bright);
   color: var(--green-bright);
@@ -116,82 +114,108 @@ html, body {
 /* SONG GRID */
 .song-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-  gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 18px;
 }
 
 .song-card {
   background: var(--bg-elevated);
-  border-radius: 10px;
-  padding: 16px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  padding: 14px;
   cursor: pointer;
-  transition: background 0.2s ease, transform 0.15s ease;
+  transition: background 0.2s ease, transform 0.15s ease, border-color 0.2s ease, box-shadow 0.2s ease;
   position: relative;
 }
 .song-card:hover {
   background: var(--bg-highlight);
+  transform: translateY(-4px);
+  border-color: #3a3a3a;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.5);
 }
-.song-card:hover .play-fab {
-  opacity: 1;
-  transform: translateY(0);
-}
+.song-card:hover .play-fab { opacity: 1; transform: none; }
 
+/* cover = the song's own melody contour, drawn as tiny lane-coloured ticks */
 .song-cover {
-  width: 100%;
-  aspect-ratio: 1 / 1;
-  border-radius: 6px;
-  margin-bottom: 14px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: flex-start;
-  padding: 10px;
-  font-size: 1.8rem;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
   position: relative;
+  width: 100%;
+  aspect-ratio: 5 / 4;
+  border-radius: 8px;
+  margin-bottom: 12px;
   overflow: hidden;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+}
+.cover-melody { position: absolute; inset: 16px 12px; }
+.cover-melody i {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  border-radius: 1px;
+  margin: -1.5px 0 0 -1.5px;
+  opacity: 0.95;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+.song-card:hover .cover-melody i { opacity: 1; transform: scale(1.25); }
+.cover-baseline {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 34%;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.55), transparent);
 }
 
 .play-fab {
   position: absolute;
-  right: 24px;
-  bottom: 84px;
-  width: 46px;
-  height: 46px;
+  right: 10px;
+  bottom: 10px;
+  width: 40px;
+  height: 40px;
   border-radius: 50%;
-  background: var(--green);
+  background: var(--green-bright);
   color: #000;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1.1rem;
+  font-size: 0.95rem;
+  padding-left: 2px;
   opacity: 0;
   transform: translateY(6px);
-  transition: opacity 0.2s ease, transform 0.2s ease;
-  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.5);
+  transition: opacity 0.2s ease, transform 0.2s ease, background 0.15s ease;
+  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.55);
+  z-index: 2;
 }
+.play-fab:hover { background: #26e065; }
 
 .song-card h3 {
-  margin: 0 0 4px;
-  font-size: 1rem;
+  margin: 0 0 3px;
+  font-size: 0.98rem;
+  line-height: 1.25;
 }
 .song-card .artist {
   color: var(--text-dim);
   margin: 0 0 10px;
-  font-size: 0.85rem;
+  font-size: 0.82rem;
 }
 .song-card .meta {
   display: flex;
+  align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  font-size: 0.72rem;
+  color: var(--text-dim);
 }
+.song-card .meta .dot { opacity: 0.4; }
 .pill-tag {
   font-size: 0.7rem;
+  font-weight: 600;
   color: var(--text-dim);
   background: rgba(255, 255, 255, 0.06);
   padding: 3px 9px;
   border-radius: 999px;
 }
 .pill-tag.accent { color: var(--green-bright); }
+.pill-tag.diff-beginner { color: var(--green-bright); background: rgba(29, 185, 84, 0.14); }
+.pill-tag.diff-intermediate { color: #f5c945; background: rgba(245, 201, 69, 0.14); }
+.pill-tag.diff-advanced { color: var(--red); background: rgba(241, 94, 108, 0.14); }
 
 /* BUTTONS */
 button, .pill {

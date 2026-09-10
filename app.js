@@ -1198,63 +1198,82 @@ function bumpCompletions(songId) {
   localStorage.setItem(`sht_completions_${songId}`, String(completions(songId) + 1));
 }
 
-const COVER_EMOJI = ["🎸", "🤘", "🔥", "⚡"];
+// null = "All artists". Persisted so the filter survives a reload, like the mic device pick.
+let activeArtistFilter = localStorage.getItem("sht_artist_filter") || null;
 
-// null = "All Tunings". Persisted so the filter survives a reload, like the mic device pick.
-let activeTuningFilter = localStorage.getItem("sht_tuning_filter") || null;
+function songDuration(data) {
+  const last = data.notes[data.notes.length - 1];
+  return (last ? (last.time || 0) + (last.duration || 0) : 0);
+}
 
-function renderTuningFilters() {
-  const row = document.getElementById("tuning-filter-row");
-  const counts = new Map();
-  for (const { data } of SONGS) {
-    const key = tuningKey(data.tuning);
-    counts.set(key, (counts.get(key) || 0) + 1);
+// The card cover: the song's own melody drawn as tiny lane-coloured ticks, x = time,
+// y = string. Same idea as the transport minimap — makes every cover unique and on-brand.
+function melodyPreviewHTML(data) {
+  const total = songDuration(data) || 1;
+  const rows = STRING_ORDER.length;
+  const step = Math.max(1, Math.ceil(data.notes.length / 90)); // cap the dot count on long songs
+  let out = "";
+  for (let i = 0; i < data.notes.length; i += step) {
+    const n = data.notes[i];
+    const x = (((n.time || 0) / total) * 100).toFixed(2);
+    const y = (((STRING_ORDER.indexOf(n.string) + 0.5) / rows) * 100).toFixed(1);
+    out += `<i style="left:${x}%;top:${y}%;background:${LANE_COLORS[n.string]}"></i>`;
   }
-  const groups = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  return out;
+}
 
-  // A filter selection from a previous visit might reference a tuning no songs currently use.
-  if (activeTuningFilter && !counts.has(activeTuningFilter)) activeTuningFilter = null;
+function renderArtistFilters() {
+  const row = document.getElementById("filter-row");
+  const counts = new Map();
+  for (const { data } of SONGS) counts.set(data.artist, (counts.get(data.artist) || 0) + 1);
 
-  const chips = [
-    `<button class="tuning-chip${activeTuningFilter ? "" : " active"}" data-tuning="">All<span class="count">${SONGS.length}</span></button>`,
-    ...groups.map(([key, count]) =>
-      `<button class="tuning-chip${activeTuningFilter === key ? " active" : ""}" data-tuning="${key}">${key}<span class="count">${count}</span></button>`
+  // Only worth a filter row once there's more than one artist.
+  if (counts.size < 2) { row.innerHTML = ""; activeArtistFilter = null; return; }
+  if (activeArtistFilter && !counts.has(activeArtistFilter)) activeArtistFilter = null;
+
+  const groups = [...counts.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+  row.innerHTML = [
+    `<button class="filter-chip${activeArtistFilter ? "" : " active"}" data-artist="">All<span class="count">${SONGS.length}</span></button>`,
+    ...groups.map(([name, count]) =>
+      `<button class="filter-chip${activeArtistFilter === name ? " active" : ""}" data-artist="${name.replace(/"/g, "&quot;")}">${name}<span class="count">${count}</span></button>`
     ),
-  ];
-  row.innerHTML = chips.join("");
+  ].join("");
 
-  row.querySelectorAll(".tuning-chip").forEach((chip) => {
+  row.querySelectorAll(".filter-chip").forEach((chip) => {
     chip.addEventListener("click", () => {
-      activeTuningFilter = chip.dataset.tuning || null;
-      if (activeTuningFilter) localStorage.setItem("sht_tuning_filter", activeTuningFilter);
-      else localStorage.removeItem("sht_tuning_filter");
+      activeArtistFilter = chip.dataset.artist || null;
+      if (activeArtistFilter) localStorage.setItem("sht_artist_filter", activeArtistFilter);
+      else localStorage.removeItem("sht_artist_filter");
       renderSongList();
     });
   });
 }
 
 function renderSongList() {
-  renderTuningFilters();
+  renderArtistFilters();
   const list = document.getElementById("song-list");
-  const songs = activeTuningFilter
-    ? SONGS.filter(({ data }) => tuningKey(data.tuning) === activeTuningFilter)
+  const songs = activeArtistFilter
+    ? SONGS.filter(({ data }) => data.artist === activeArtistFilter)
     : SONGS;
   list.innerHTML = songs.map(({ id, data }, i) => {
-    const c1 = LANE_COLORS[(i % 6) + 1];
-    const c2 = LANE_COLORS[((i + 3) % 6) + 1];
     const done = completions(id);
+    const hue = (i * 47) % 360;
+    const diffClass = `diff-${(data.difficulty || "").toLowerCase()}`;
     return `
     <div class="song-card" data-song="${id}">
-      <div class="song-cover" style="background: linear-gradient(135deg, ${c1}, ${c2})">
-        ${COVER_EMOJI[i % COVER_EMOJI.length]}
+      <div class="song-cover" style="background: linear-gradient(160deg, hsl(${hue} 34% 9%), hsl(${(hue + 40) % 360} 28% 5%))">
+        <div class="cover-melody">${melodyPreviewHTML(data)}</div>
+        <div class="cover-baseline"></div>
         <div class="play-fab">▶</div>
       </div>
       <h3>${data.title}</h3>
       <p class="artist">${data.artist}</p>
       <div class="meta">
-        <span class="pill-tag">${data.difficulty}</span>
-        <span class="pill-tag">${data.notes.length} notes</span>
-        ${done ? `<span class="pill-tag accent">Cleared ${done}×</span>` : ""}
+        <span class="pill-tag ${diffClass}">${data.difficulty}</span>
+        <span>${fmtTime(songDuration(data))}</span>
+        <span class="dot">·</span>
+        <span>${data.notes.length} notes</span>
+        ${done ? `<span class="dot">·</span><span class="pill-tag accent">Cleared ${done}×</span>` : ""}
       </div>
     </div>
   `;

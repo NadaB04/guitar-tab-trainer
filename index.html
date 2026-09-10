@@ -21,7 +21,17 @@
     <!-- SONG SELECT -->
     <section id="screen-menu" class="screen active">
       <h1 class="page-title">Play the melody</h1>
-      <p class="tagline">The vocal line of each song — the tab only moves forward when your guitar actually plays the right note.</p>
+      <p class="tagline">The vocal line of each song, on guitar.</p>
+      <div class="mode-toggle" id="mode-toggle">
+        <button class="mode-btn active" data-mode="practice">
+          <span class="mode-name">🎯 Practice</span>
+          <span class="mode-desc">Note by note — it waits for you to nail each one</span>
+        </button>
+        <button class="mode-btn" data-mode="playalong">
+          <span class="mode-name">🎮 Play-Along</span>
+          <span class="mode-desc">Song runs at tempo — hit notes in time, rack up a score</span>
+        </button>
+      </div>
       <div id="filter-row" class="filter-row"></div>
       <div id="song-list" class="song-grid"></div>
     </section>
@@ -150,6 +160,78 @@
         <p id="play-results-body"></p>
         <button id="play-replay-btn" class="pill primary">Play Again</button>
         <button id="play-menu-btn" class="pill ghost">Back to Songs</button>
+      </div>
+    </section>
+
+    <!-- PLAY-ALONG MODE -->
+    <section id="screen-playalong" class="screen">
+      <div class="play-topline">
+        <button id="pa-back-btn" class="pill ghost">← Back</button>
+        <div class="play-song-info">
+          <div id="pa-song-name">—</div>
+          <div id="pa-song-sub">Play-Along</div>
+        </div>
+        <div class="topline-actions">
+          <button id="pa-pause-btn" class="pill ghost small">⏸ Pause</button>
+          <button id="pa-restart-btn" class="pill ghost">Restart</button>
+        </div>
+      </div>
+
+      <div id="pa-gate" class="mic-gate">
+        <button id="pa-start-btn" class="pill primary">🎤 Start Listening</button>
+        <p id="pa-error" class="mic-error"></p>
+      </div>
+
+      <div id="pa-stage" class="pa-stage hidden">
+        <div class="pa-hud">
+          <div id="pa-combo" class="pa-combo hidden">
+            <span id="pa-combo-n">0</span>
+            <span class="pa-combo-word">COMBO</span>
+            <span id="pa-mult" class="pa-mult hidden">×2</span>
+          </div>
+          <div class="pa-score-wrap">
+            <div class="pa-score-label">SCORE</div>
+            <div id="pa-score" class="pa-score">0</div>
+          </div>
+          <div class="pa-fever">
+            <div id="pa-fever-fill" class="pa-fever-fill"></div>
+            <span class="pa-fever-label">FEVER</span>
+          </div>
+        </div>
+
+        <div class="track-container pa-track">
+          <div class="string-labels" id="pa-string-labels"></div>
+          <div class="track-viewport pa-viewport">
+            <div class="pa-hit-glow"></div>
+            <div class="pa-hitline"></div>
+            <div id="pa-strip" class="track-strip pa-strip"></div>
+            <div id="pa-judgments" class="pa-judgments"></div>
+          </div>
+        </div>
+
+        <div class="pa-controls">
+          <div class="pa-ctl-row">
+            <span>Speed</span>
+            <input id="pa-speed" type="range" min="50" max="100" step="5" value="100" />
+            <span id="pa-speed-val">100%</span>
+          </div>
+          <button id="pa-guide-btn" class="pill ghost small active">🔊 Guide</button>
+          <div class="pa-progress"><div id="pa-progress-fill" class="pa-progress-fill"></div></div>
+        </div>
+
+        <div id="pa-countdown" class="pa-countdown hidden"><span>3</span></div>
+      </div>
+
+      <div id="pa-results" class="pa-results hidden">
+        <div id="pa-hiscore-tag" class="pa-hiscore-tag hidden">★ NEW HIGH SCORE</div>
+        <div id="pa-grade" class="pa-grade" data-grade="A">A</div>
+        <div class="pa-final-score-label">SCORE</div>
+        <div id="pa-final-score" class="pa-final-score">0</div>
+        <div id="pa-stats" class="pa-stats"></div>
+        <div class="pa-results-btns">
+          <button id="pa-again-btn" class="pill primary">Play Again</button>
+          <button id="pa-menu-btn" class="pill ghost">Back to Songs</button>
+        </div>
       </div>
     </section>
 

@@ -768,3 +768,317 @@ button:active { transform: scale(0.97); }
 #screen-play:has(.demo-mode) .level-meter-row,
 #screen-play:has(.demo-mode) .mic-device-row,
 #screen-play:has(.demo-mode) .gain-row { display: none; }
+
+/* ==================================================================== *
+ * MENU MODE TOGGLE (Practice / Play-Along)
+ * ==================================================================== */
+.mode-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  max-width: 620px;
+  margin: 0 0 24px;
+}
+.mode-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  text-align: left;
+  padding: 12px 16px;
+  border-radius: 12px;
+  background: var(--bg-elevated);
+  border: 1px solid transparent;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, transform 0.12s ease;
+}
+.mode-btn:hover { transform: translateY(-2px); }
+.mode-btn .mode-name { font-weight: 800; font-size: 0.95rem; }
+.mode-btn .mode-desc { font-size: 0.72rem; color: var(--text-dim); font-weight: 400; }
+.mode-btn.active { border-color: var(--green-bright); background: rgba(29, 185, 84, 0.12); }
+.mode-btn.active .mode-name { color: var(--green-bright); }
+
+/* ==================================================================== *
+ * PLAY-ALONG MODE
+ * ==================================================================== */
+.pa-stage { position: relative; }
+.pa-stage.hidden { display: none; }
+.pa-results.hidden, .pa-countdown.hidden, .pa-combo.hidden, .pa-mult.hidden, .pa-hiscore-tag.hidden { display: none; }
+
+.pa-hud {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 14px;
+  min-height: 74px;
+}
+.pa-score-wrap { text-align: center; }
+.pa-score-label { font-size: 0.62rem; letter-spacing: 3px; color: var(--text-dim); }
+.pa-score {
+  font-family: "Consolas", monospace;
+  font-weight: 800;
+  font-size: 2.6rem;
+  line-height: 1;
+  text-shadow: 0 0 24px rgba(29, 185, 84, 0.45);
+  font-variant-numeric: tabular-nums;
+}
+.pa-combo { justify-self: start; display: flex; align-items: baseline; gap: 8px; }
+.pa-combo #pa-combo-n {
+  font-family: "Consolas", monospace;
+  font-weight: 800;
+  font-size: 2.2rem;
+  line-height: 1;
+  color: #f5c945;
+  text-shadow: 0 0 18px rgba(245, 201, 69, 0.6);
+}
+.pa-combo-word { font-size: 0.7rem; letter-spacing: 2px; color: var(--text-dim); }
+.pa-mult {
+  font-family: "Consolas", monospace;
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: #ff9a3e;
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: rgba(255, 154, 62, 0.16);
+  box-shadow: 0 0 16px rgba(255, 154, 62, 0.5);
+}
+.pa-combo.pa-combo-bump #pa-combo-n { animation: pa-bump 0.28s cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes pa-bump { 0% { transform: scale(1.4); } 100% { transform: scale(1); } }
+
+.pa-fever {
+  justify-self: end;
+  position: relative;
+  width: 150px;
+  height: 12px;
+  border-radius: 999px;
+  background: var(--bg-highlight);
+  overflow: hidden;
+  border: 1px solid var(--border);
+}
+.pa-fever-fill {
+  height: 100%;
+  width: 0%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #b06cf0, #ef5b7a, #ff9a3e);
+  transition: width 0.25s ease;
+}
+.pa-fever-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.58rem;
+  letter-spacing: 2px;
+  font-weight: 800;
+  color: rgba(255, 255, 255, 0.75);
+}
+.pa-stage.pa-feveron .pa-fever { box-shadow: 0 0 22px rgba(239, 91, 122, 0.8); }
+.pa-stage.pa-feveron .pa-score { text-shadow: 0 0 30px rgba(255, 154, 62, 0.85); }
+
+.pa-track { padding: 0; overflow: hidden; }
+.pa-viewport { height: 336px; }
+.pa-hitline {
+  position: absolute;
+  left: 90px;
+  top: 0; bottom: 0;
+  width: 4px;
+  margin-left: -2px;
+  background: #fff;
+  box-shadow: 0 0 10px rgba(255, 255, 255, 0.9), 0 0 34px rgba(29, 185, 84, 0.7);
+  z-index: 6;
+  border-radius: 2px;
+}
+.pa-hit-glow {
+  position: absolute;
+  left: 0;
+  top: 0; bottom: 0;
+  width: 220px;
+  background: radial-gradient(circle at 90px 50%, rgba(29, 185, 84, 0.3), transparent 72%);
+  z-index: 2;
+  opacity: 0.4;
+  pointer-events: none;
+}
+.pa-hit-glow.on { animation: pa-beat 0.34s ease-out; }
+@keyframes pa-beat {
+  0% { opacity: 0.95; transform: scaleX(1.18); }
+  100% { opacity: 0.4; transform: scaleX(1); }
+}
+.pa-strip { transition: none; }
+
+.pa-gem {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+  margin-left: -20px;
+  margin-top: -20px;
+  border-radius: 9px;
+  transform: rotate(45deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 1rem;
+  color: #05130a;
+  border: 3px solid rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 14px rgba(0, 0, 0, 0.4), inset 0 0 8px rgba(255, 255, 255, 0.35);
+  z-index: 5;
+}
+.pa-gem span { transform: rotate(-45deg); text-shadow: 0 1px 1px rgba(255, 255, 255, 0.4); }
+.pa-gem-tail {
+  position: absolute;
+  height: 12px;
+  margin-top: -6px;
+  border-radius: 6px;
+  opacity: 0.5;
+  z-index: 4;
+}
+.pa-gem.pa-gem-hit { animation: pa-gem-hit 0.4s cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+@keyframes pa-gem-hit {
+  0% { transform: rotate(45deg) scale(1.5); box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.9), 0 0 40px 10px rgba(29, 185, 84, 0.9); }
+  100% { transform: rotate(45deg) scale(0); opacity: 0; box-shadow: 0 0 0 30px rgba(255, 255, 255, 0); }
+}
+.pa-gem.pa-gem-miss { animation: pa-gem-miss 0.5s ease forwards; }
+@keyframes pa-gem-miss {
+  0% { filter: none; }
+  100% { filter: grayscale(1) brightness(0.5); transform: rotate(45deg) translateY(26px); opacity: 0.25; }
+}
+
+.pa-judgments { position: absolute; inset: 0; pointer-events: none; z-index: 7; }
+.pa-judge {
+  position: absolute;
+  left: 90px;
+  margin-top: -12px;
+  font-weight: 900;
+  font-size: 1.15rem;
+  letter-spacing: 1px;
+  white-space: nowrap;
+  transform: translateX(-50%);
+  animation: pa-judge-float 0.7s ease-out forwards;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.7);
+}
+@keyframes pa-judge-float {
+  0% { opacity: 0; transform: translate(-50%, 6px) scale(0.7); }
+  25% { opacity: 1; transform: translate(-50%, -6px) scale(1.1); }
+  100% { opacity: 0; transform: translate(-50%, -46px) scale(1); }
+}
+.pa-judge-perfect { color: #ffd54a; text-shadow: 0 0 16px rgba(255, 213, 74, 0.9); }
+.pa-judge-good { color: var(--green-bright); }
+.pa-judge-ok { color: #4fb3f0; }
+.pa-judge-miss { color: var(--red); }
+
+.pa-score-pop {
+  position: absolute;
+  left: 122px;
+  font-family: "Consolas", monospace;
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #fff;
+  pointer-events: none;
+  z-index: 7;
+  animation: pa-score-pop 0.75s ease-out forwards;
+}
+@keyframes pa-score-pop {
+  0% { opacity: 0; transform: translateY(4px); }
+  20% { opacity: 1; }
+  100% { opacity: 0; transform: translateY(-40px); }
+}
+
+.pa-controls {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  max-width: 640px;
+  margin: 16px auto 0;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.pa-ctl-row { display: flex; align-items: center; gap: 8px; }
+.pa-ctl-row input[type="range"] { width: 130px; }
+#pa-guide-btn.active { color: var(--green-bright); border-color: var(--green-bright); }
+.pa-progress {
+  flex: 1;
+  min-width: 0;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-highlight);
+  overflow: hidden;
+}
+.pa-progress-fill { height: 100%; width: 0%; background: linear-gradient(90deg, var(--green), var(--green-bright)); }
+
+.pa-countdown {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 20;
+  background: rgba(10, 10, 10, 0.55);
+}
+.pa-countdown span {
+  font-family: "Consolas", monospace;
+  font-weight: 900;
+  font-size: 7rem;
+  color: var(--green-bright);
+  text-shadow: 0 0 50px rgba(29, 185, 84, 0.8);
+  animation: pa-count 0.9s ease;
+}
+@keyframes pa-count {
+  0% { opacity: 0; transform: scale(2.2); }
+  30% { opacity: 1; transform: scale(1); }
+  80% { opacity: 1; }
+  100% { opacity: 0; transform: scale(0.85); }
+}
+
+.pa-results { text-align: center; padding: 30px 20px 50px; }
+.pa-hiscore-tag {
+  display: inline-block;
+  margin-bottom: 14px;
+  padding: 5px 16px;
+  border-radius: 999px;
+  font-weight: 800;
+  font-size: 0.8rem;
+  letter-spacing: 1px;
+  color: #1a0500;
+  background: linear-gradient(135deg, #ffd54a, #ff9a3e);
+  box-shadow: 0 0 24px rgba(255, 154, 62, 0.7);
+  animation: pa-bump 0.4s ease;
+}
+.pa-grade {
+  font-family: "Consolas", monospace;
+  font-weight: 900;
+  font-size: 8rem;
+  line-height: 1;
+  margin: 4px 0;
+}
+.pa-grade[data-grade="S"] { color: #ffd54a; text-shadow: 0 0 60px rgba(255, 213, 74, 0.9); }
+.pa-grade[data-grade="A"] { color: var(--green-bright); text-shadow: 0 0 50px rgba(29, 185, 84, 0.8); }
+.pa-grade[data-grade="B"] { color: #4fb3f0; text-shadow: 0 0 40px rgba(79, 179, 240, 0.7); }
+.pa-grade[data-grade="C"] { color: #f5c945; }
+.pa-grade[data-grade="D"] { color: var(--text-dim); }
+.pa-grade.pa-grade-slam { animation: pa-slam 0.5s cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes pa-slam {
+  0% { opacity: 0; transform: scale(3) rotate(-8deg); }
+  60% { opacity: 1; transform: scale(0.9) rotate(2deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+.pa-final-score-label { font-size: 0.65rem; letter-spacing: 3px; color: var(--text-dim); }
+.pa-final-score { font-family: "Consolas", monospace; font-weight: 800; font-size: 2.4rem; margin-bottom: 24px; }
+.pa-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(90px, 1fr));
+  gap: 10px;
+  max-width: 420px;
+  margin: 0 auto 28px;
+}
+.pa-stats > div { background: var(--bg-elevated); border-radius: 10px; padding: 12px 8px; }
+.pa-stats b { display: block; font-family: "Consolas", monospace; font-size: 1.5rem; font-weight: 800; }
+.pa-stats span { font-size: 0.68rem; color: var(--text-dim); letter-spacing: 0.5px; }
+.pa-results-btns { display: flex; gap: 12px; justify-content: center; }
+
+@media (max-width: 620px) {
+  .mode-toggle { grid-template-columns: 1fr; }
+  .pa-hud { grid-template-columns: 1fr 1fr; }
+  .pa-fever { display: none; }
+}

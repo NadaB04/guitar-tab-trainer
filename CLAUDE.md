@@ -43,6 +43,14 @@ of `PlayMode`/`Tuner` isn't the destination screen, since both share the one `Pi
   the standalone Tuner screen (top-bar button) is one click away for a proper check. The mic
   device picker lives in `listening-tools` (real labels, post-permission; `#mic-device-select`
   `change` → `PlayMode.switchDevice`). The `play-surface` is also reused by `Demo` with `.demo-mode`.
+- `playalong` — the arcade mode (`PlayAlong` module). The song scrolls at tempo and **never
+  stalls**; you score points for hitting notes in a timing window. This is the answer to "fast
+  passages are unplayable in Practice" — detection here is deliberately lenient (a single matching
+  frame in a ~360ms window counts; no `CONFIRM_FRAMES`). Sub-states: `pa-gate` → countdown →
+  `pa-stage` → `pa-results`. Clock-driven like `Demo` (own `_xAt` scroll math, `GuitarVoice` for
+  the optional guide track). Own gems/track (`.pa-gem`, `#pa-strip`) — PlayMode's track code is
+  untouched. Menu has a `.mode-toggle` (Practice / Play-Along, persisted as `sht_mode`) that
+  decides which screen a song card opens.
 - `tuner` — standalone chromatic tuner (see `Tuner` below). Has its own `mic-gate` → surface flow
   but reuses the same `PitchEngine` session if `play` already started one (no re-prompt).
 
@@ -246,6 +254,19 @@ a song. Scripts for the two fallbacks are throwaway Node in the session scratchp
   and re-point `nextIdx`/`shownIdx`). `scrub(i)`/`commitScrub(i)` are the seek-slider hooks —
   live drag pauses and repaints via `_renderAt(t)` (which does NOT touch the clock), release
   seeks there and resumes iff playback was running when grabbed (`_scrubResume`).
+- `PlayAlong` — the arcade mode (`#screen-playalong`). Structurally a cousin of `Demo`: builds its
+  own `.pa-gem` strip (`_buildTrack`, own `_positions`/`_xAt` — deliberately does NOT share
+  PlayMode's track code), runs a clock-driven `_loop` off `SFX`/`GuitarVoice`'s shared
+  `AudioContext`, optionally schedules the melody as a quiet **guide** track. Judging: `onFrame`
+  checks the incoming pitch against any note whose `±PA_HIT_WINDOW/rate` window is open —
+  `blind` (cents ≤ `PA_CENTS_TOL` 45) OR `targeted` (`correlationAtFreq` ≥ `TARGET_CORR_CONFIDENCE`);
+  **one matching frame is enough** (no confirm-frames — that's the whole point). `_loop` flips any
+  note whose window fully passed unjudged to a miss. Grade by `|dt|`: perfect/good/ok. Score =
+  `PA_POINTS[grade] × combo multiplier` (`_mult`: ×1/×2/×3/×4 at combo 0/10/25/50). `_fever` fills
+  the meter, `pa-feveron` at 100. Floating `.pa-judge` / `.pa-score-pop` spawned per hit and
+  self-remove on `animationend`; `_pulse` flashes `.pa-hit-glow` per beat. `_finish` → letter
+  grade (weighted hit quality), high score in `localStorage` (`sht_hi_<songId>`), stats grid.
+  `speed` (50–100%) and `guide` (🔊/🔇) are the only knobs; speed applies on (re)start.
 - `Transport` — the shared pause button + **minimap** seek bar (`#transport-bar` under the target
   panel, visible on the practice surface AND during a demo). `inDemo` (the `.demo-mode` class)
   picks which it drives: Demo's `togglePause`/`scrub`/`commitScrub`, or `PlayMode.togglePause()`
@@ -303,7 +324,9 @@ manually in a loop when checking results programmatically.
 ## Known tuning constants (top of `app.js`)
 
 `MIN_RMS`, `MIN_CONFIDENCE`, `MATCH_CENTS_TOLERANCE`, `CONFIRM_FRAMES`, `WRONG_CONFIRM_FRAMES`,
-`*_COOLDOWN_MS`, `DEFAULT_INPUT_GAIN`, `TARGET_CORR_CONFIDENCE`, `TUNER_CENTS_TOLERANCE`.
+`*_COOLDOWN_MS`, `DEFAULT_INPUT_GAIN`, `TARGET_CORR_CONFIDENCE`, `TUNER_CENTS_TOLERANCE`. Play-Along
+has its own near `PlayAlong`: `PA_HIT_WINDOW` (0.18s), `PA_PERFECT`/`PA_GOOD`, `PA_CENTS_TOL` (45),
+`PA_POINTS`.
 
 This environment has no real mic. When the user reports a detection problem: (1) ask what the
 play-surface tuner readout (or the standalone Tuner) actually shows (right note/Hz but not advancing? nothing at all?

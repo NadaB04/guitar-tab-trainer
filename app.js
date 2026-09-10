@@ -1142,6 +1142,375 @@ const Transport = {
 };
 
 /* ---------------------------------------------------------------------- *
+ * PlayAlong — the arcade mode. The song scrolls at tempo and never stalls;
+ * you score points for hitting each note in its timing window. Detection
+ * is deliberately lenient (one matching frame in a ~360ms window counts,
+ * no CONFIRM_FRAMES), which is what makes fast passages playable — unlike
+ * PlayMode, where every note is a hard gate. Clock-driven like Demo
+ * (shares GuitarVoice for the optional guide track and the _xAt scroll
+ * math). Own screen (#screen-playalong); PlayMode is left untouched.
+ * ---------------------------------------------------------------------- */
+
+const PA_HIT_WINDOW = 0.18;   // seconds each side of a note's ideal time (÷ rate at play)
+const PA_PERFECT = 0.055;
+const PA_GOOD = 0.11;
+const PA_CENTS_TOL = 45;      // looser than gameplay's ±35 — timing is the challenge, not pitch
+const PA_POINTS = { perfect: 100, good: 60, ok: 30 };
+
+const PlayAlong = {
+  songId: null, song: null, notes: null, positions: null, playTimes: null,
+  gemEls: [], tailEls: [],
+  running: false, paused: false, rafId: null, metroTimer: null,
+  audioStart: 0, rate: 1, guide: true,
+  nextAudioIdx: 0, _lastBeat: -1, _pausedT: 0,
+  score: 0, shownScore: 0, combo: 0, maxCombo: 0, counts: null, judged: null,
+
+  load(songId, song) {
+    Demo.stop(); PlayMode.stop();
+    this.stopInternal();
+    this.songId = songId;
+    this.song = song;
+    this.notes = song.notes;
+    document.getElementById("pa-song-name").textContent = `${song.title} — ${song.artist}`;
+    document.getElementById("pa-results").classList.add("hidden");
+    document.getElementById("pa-error").textContent = "";
+    this._buildTrack();
+    this._resetScore();
+
+    if (PitchEngine.ctx) {
+      document.getElementById("pa-gate").classList.add("hidden");
+      document.getElementById("pa-stage").classList.remove("hidden");
+      this._countdownThen(() => this._begin());
+    } else {
+      document.getElementById("pa-gate").classList.remove("hidden");
+      document.getElementById("pa-stage").classList.add("hidden");
+      MicDevices.populate();
+    }
+  },
+
+  async beginListening() {
+    try {
+      const deviceId = MicDevices.selectedId();
+      await PitchEngine.start(null, deviceId);
+      MicDevices.remember(deviceId);
+      MicDevices.populate();
+      document.getElementById("pa-gate").classList.add("hidden");
+      document.getElementById("pa-stage").classList.remove("hidden");
+      this._countdownThen(() => this._begin());
+    } catch (e) {
+      document.getElementById("pa-error").textContent =
+        "Couldn't access the microphone. Check browser permissions and that a mic is connected.";
+    }
+  },
+
+  _resetScore() {
+    this.score = 0; this.shownScore = 0; this.combo = 0; this.maxCombo = 0;
+    this.counts = { perfect: 0, good: 0, ok: 0, miss: 0 };
+    this.judged = new Array(this.notes.length).fill(false);
+    document.getElementById("pa-score").textContent = "0";
+    document.getElementById("pa-combo").classList.add("hidden");
+    document.getElementById("pa-fever-fill").style.width = "0%";
+    document.getElementById("pa-progress-fill").style.width = "0%";
+    document.getElementById("pa-stage").classList.remove("pa-feveron");
+    document.getElementById("pa-judgments").innerHTML = "";
+  },
+
+  _positions() {
+    let prevX = -Infinity;
+    return this.notes.map((n) => {
+      let x = PLAYHEAD_X + (n.time || 0) * PIXELS_PER_SECOND;
+      if (x < prevX + MIN_NOTE_GAP) x = prevX + MIN_NOTE_GAP;
+      prevX = x;
+      const tailWidth = Math.max(MIN_TAIL_WIDTH, Math.min((n.duration || 0) * PIXELS_PER_SECOND, MAX_TAIL_WIDTH));
+      return { x, tailWidth };
+    });
+  },
+
+  rowY(s) { return (STRING_ORDER.indexOf(s) + 0.5) * ROW_HEIGHT; },
+
+  _buildTrack() {
+    document.getElementById("pa-string-labels").innerHTML =
+      STRING_ORDER.map((s) => `<div class="string-label">${stringLabel(this.song, s)}</div>`).join("");
+    const strip = document.getElementById("pa-strip");
+    this.positions = this._positions();
+    const width = (this.positions.length ? this.positions[this.positions.length - 1].x : 0) + 500;
+    strip.style.width = `${width}px`;
+    const lines = STRING_ORDER.map((s) => `<div class="staff-line" style="top:${this.rowY(s)}px;width:${width}px;"></div>`).join("");
+    const tails = this.notes.map((n, i) => {
+      const { x, tailWidth } = this.positions[i];
+      return `<div class="pa-gem-tail" data-i="${i}" style="left:${x}px;top:${this.rowY(n.string)}px;width:${tailWidth}px;background:${LANE_COLORS[n.string]};"></div>`;
+    }).join("");
+    const gems = this.notes.map((n, i) => {
+      const { x } = this.positions[i];
+      return `<div class="pa-gem" data-i="${i}" style="left:${x}px;top:${this.rowY(n.string)}px;background:${LANE_COLORS[n.string]};"><span>${n.fret}</span></div>`;
+    }).join("");
+    strip.innerHTML = lines + tails + gems;
+    this.gemEls = Array.from(strip.querySelectorAll(".pa-gem"));
+    this.tailEls = Array.from(strip.querySelectorAll(".pa-gem-tail"));
+    strip.style.transform = `translateX(${PLAYHEAD_X}px)`;
+  },
+
+  _countdownThen(done) {
+    const el = document.getElementById("pa-countdown");
+    const span = el.querySelector("span");
+    el.classList.remove("hidden");
+    let n = 3;
+    const tick = () => {
+      if (n < 0) { el.classList.add("hidden"); done(); return; }
+      span.textContent = n === 0 ? "GO" : String(n);
+      span.style.animation = "none"; void span.offsetWidth; span.style.animation = "";
+      n--;
+      setTimeout(tick, 850);
+    };
+    tick();
+  },
+
+  _begin() {
+    const ctx = GuitarVoice.ensure();
+    this.rate = Number(document.getElementById("pa-speed").value) / 100;
+    this.playTimes = this.notes.map((n) => (n.time || 0) / this.rate);
+    this.running = true;
+    this.paused = false;
+    this.nextAudioIdx = 0;
+    this._lastBeat = -1;
+    this.audioStart = ctx.currentTime + 0.25;
+    PitchEngine.onFrame = (f) => this.onFrame(f);
+    Metronome.start(Math.max(30, Math.round((this.song.bpm || 120) * this.rate)));
+    document.getElementById("pa-pause-btn").textContent = "⏸ Pause";
+    this._loop();
+  },
+
+  _clockT() { return (SFX.ctx || GuitarVoice.ctx).currentTime - this.audioStart; },
+
+  _xAt(t) {
+    const pt = this.playTimes, pos = this.positions;
+    const speed = PIXELS_PER_SECOND * this.rate;
+    if (t <= pt[0]) return (pos[0].x - pt[0] * speed) + t * speed;
+    let i = 0;
+    for (let k = 0; k < pt.length; k++) { if (pt[k] <= t) i = k; else break; }
+    if (i >= pt.length - 1) return pos[i].x + (t - pt[i]) * speed;
+    if (pt[i + 1] <= pt[i]) return pos[i].x;
+    return pos[i].x + (pos[i + 1].x - pos[i].x) * ((t - pt[i]) / (pt[i + 1] - pt[i]));
+  },
+
+  _loop() {
+    if (!this.running || this.paused) return;
+    const ctx = SFX.ctx || GuitarVoice.ctx;
+    const t = ctx.currentTime - this.audioStart;
+
+    // optional guide track, scheduled ahead on the audio clock
+    while (this.nextAudioIdx < this.notes.length && this.playTimes[this.nextAudioIdx] < t + 0.35) {
+      if (this.guide) {
+        const n = this.notes[this.nextAudioIdx];
+        const freq = noteFrequency(n.string, n.fret, this.song.tuningOffsets);
+        const when = Math.max(ctx.currentTime + 0.02, this.audioStart + this.playTimes[this.nextAudioIdx]);
+        GuitarVoice.note(freq, when, Math.min((n.duration || 0.25) / this.rate, 1.2), 0.42);
+      }
+      this.nextAudioIdx++;
+    }
+
+    document.getElementById("pa-strip").style.transform = `translateX(${PLAYHEAD_X - this._xAt(t)}px)`;
+
+    const total = this.playTimes[this.playTimes.length - 1] || 1;
+    document.getElementById("pa-progress-fill").style.width = `${Math.max(0, Math.min(100, (t / total) * 100))}%`;
+
+    const beat = Math.floor((t * (this.song.bpm || 120) * this.rate) / 60);
+    if (t > 0 && beat !== this._lastBeat) { this._lastBeat = beat; this._pulse(); }
+
+    // any note whose window has fully passed unjudged = a miss
+    const win = PA_HIT_WINDOW / this.rate;
+    for (let i = 0; i < this.notes.length; i++) {
+      if (this.judged[i]) continue;
+      if (t > this.playTimes[i] + win) this._judge(i, "miss", t);
+      else break;
+    }
+
+    if (this.shownScore !== this.score) {
+      const gap = this.score - this.shownScore;
+      this.shownScore += Math.abs(gap) < 5 ? gap : Math.ceil(gap / 6);
+      document.getElementById("pa-score").textContent = this.shownScore.toLocaleString();
+    }
+
+    if (t > total + ((this.notes[this.notes.length - 1].duration || 0) / this.rate) + 1.2) {
+      this._finish();
+      return;
+    }
+    this.rafId = requestAnimationFrame(() => this._loop());
+  },
+
+  onFrame(freq) {
+    if (!this.running || this.paused || !freq) return;
+    const now = this._clockT();
+    const win = PA_HIT_WINDOW / this.rate;
+    for (let i = 0; i < this.notes.length; i++) {
+      if (this.judged[i]) continue;
+      const dt = now - this.playTimes[i];
+      if (dt < -win) break;      // this note (and all after) still in the future
+      if (dt > win) continue;    // already handled as a miss in _loop; skip
+      const target = noteFrequency(this.notes[i].string, this.notes[i].fret, this.song.tuningOffsets);
+      const blind = Math.abs(centsBetween(freq, target)) <= PA_CENTS_TOL;
+      const targeted = !blind && PitchEngine.buffer && PitchEngine.ctx &&
+        correlationAtFreq(PitchEngine.buffer, PitchEngine.ctx.sampleRate, target) >= TARGET_CORR_CONFIDENCE;
+      if (blind || targeted) {
+        const adt = Math.abs(dt);
+        const grade = adt <= PA_PERFECT / this.rate ? "perfect" : adt <= PA_GOOD / this.rate ? "good" : "ok";
+        this._judge(i, grade, now);
+        return;
+      }
+    }
+  },
+
+  _judge(i, grade, now) {
+    this.judged[i] = true;
+    this.counts[grade]++;
+    const gem = this.gemEls[i];
+    const y = this.rowY(this.notes[i].string);
+
+    if (grade === "miss") {
+      this.combo = 0;
+      if (gem) gem.classList.add("pa-gem-miss");
+      SFX.miss();
+      this._popup("MISS", "miss", y);
+      this._updateCombo();
+      return;
+    }
+
+    this.combo++;
+    this.maxCombo = Math.max(this.maxCombo, this.combo);
+    const pts = PA_POINTS[grade] * this._mult();
+    this.score += pts;
+    if (gem) gem.classList.add("pa-gem-hit");
+    SFX.pluck(noteFrequency(this.notes[i].string, this.notes[i].fret, this.song.tuningOffsets), { volume: 0.11, decay: 0.22 });
+    this._popup(grade.toUpperCase(), grade, y);
+    this._scorePop(`+${pts}`, y);
+    this._updateCombo();
+    this._fever();
+  },
+
+  _mult() { return this.combo >= 50 ? 4 : this.combo >= 25 ? 3 : this.combo >= 10 ? 2 : 1; },
+
+  _updateCombo() {
+    const el = document.getElementById("pa-combo");
+    if (this.combo < 2) { el.classList.add("hidden"); return; }
+    el.classList.remove("hidden");
+    document.getElementById("pa-combo-n").textContent = this.combo;
+    el.classList.remove("pa-combo-bump"); void el.offsetWidth; el.classList.add("pa-combo-bump");
+    const m = this._mult();
+    const mEl = document.getElementById("pa-mult");
+    if (m > 1) { mEl.textContent = `×${m}`; mEl.classList.remove("hidden"); }
+    else mEl.classList.add("hidden");
+  },
+
+  _fever() {
+    const pct = Math.min(100, this.combo * 4);
+    document.getElementById("pa-fever-fill").style.width = `${pct}%`;
+    document.getElementById("pa-stage").classList.toggle("pa-feveron", pct >= 100);
+  },
+
+  _pulse() {
+    const g = document.querySelector("#pa-stage .pa-hit-glow");
+    if (!g) return;
+    g.classList.remove("on"); void g.offsetWidth; g.classList.add("on");
+  },
+
+  _popup(text, cls, y) {
+    const d = document.createElement("div");
+    d.className = `pa-judge pa-judge-${cls}`;
+    d.textContent = text;
+    d.style.top = `${y}px`;
+    const host = document.getElementById("pa-judgments");
+    host.appendChild(d);
+    d.addEventListener("animationend", () => d.remove());
+  },
+
+  _scorePop(text, y) {
+    const d = document.createElement("div");
+    d.className = "pa-score-pop";
+    d.textContent = text;
+    d.style.top = `${y - 6}px`;
+    const host = document.getElementById("pa-judgments");
+    host.appendChild(d);
+    d.addEventListener("animationend", () => d.remove());
+  },
+
+  togglePause() {
+    if (!this.running) return;
+    if (this.paused) {
+      this.paused = false;
+      const ctx = GuitarVoice.ensure();
+      this.audioStart = ctx.currentTime + 0.15 - this._pausedT;
+      this.nextAudioIdx = 0;
+      while (this.nextAudioIdx < this.notes.length && this.playTimes[this.nextAudioIdx] < this._pausedT) this.nextAudioIdx++;
+      Metronome.start(Math.max(30, Math.round((this.song.bpm || 120) * this.rate)));
+      PitchEngine.onFrame = (f) => this.onFrame(f);
+      document.getElementById("pa-pause-btn").textContent = "⏸ Pause";
+      this._loop();
+    } else {
+      this.paused = true;
+      this._pausedT = this._clockT();
+      if (this.rafId) cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+      Metronome.stop();
+      GuitarVoice.panic();
+      PitchEngine.onFrame = null;
+      document.getElementById("pa-pause-btn").textContent = "▶ Resume";
+    }
+  },
+
+  _finish() {
+    this.running = false;
+    if (this.rafId) cancelAnimationFrame(this.rafId);
+    this.rafId = null;
+    Metronome.stop();
+    GuitarVoice.panic();
+    PitchEngine.onFrame = null;
+
+    const total = this.notes.length || 1;
+    const weighted = (this.counts.perfect + this.counts.good * 0.6 + this.counts.ok * 0.3) / total;
+    const grade = weighted >= 0.9 ? "S" : weighted >= 0.76 ? "A" : weighted >= 0.6 ? "B" : weighted >= 0.42 ? "C" : "D";
+    const key = `sht_hi_${this.songId}`;
+    const prevHi = Number(localStorage.getItem(key) || 0);
+    const isHi = this.score > prevHi && this.score > 0;
+    if (isHi) localStorage.setItem(key, String(this.score));
+    bumpCompletions(this.songId);
+
+    document.getElementById("pa-stage").classList.add("hidden");
+    const r = document.getElementById("pa-results");
+    r.classList.remove("hidden");
+    const g = document.getElementById("pa-grade");
+    g.textContent = grade;
+    g.dataset.grade = grade;
+    g.classList.remove("pa-grade-slam"); void g.offsetWidth; g.classList.add("pa-grade-slam");
+    document.getElementById("pa-final-score").textContent = this.score.toLocaleString();
+    document.getElementById("pa-hiscore-tag").classList.toggle("hidden", !isHi);
+    const acc = Math.round(((total - this.counts.miss) / total) * 100);
+    document.getElementById("pa-stats").innerHTML = `
+      <div><b>${this.counts.perfect}</b><span>PERFECT</span></div>
+      <div><b>${this.counts.good}</b><span>GOOD</span></div>
+      <div><b>${this.counts.ok}</b><span>OK</span></div>
+      <div><b>${this.counts.miss}</b><span>MISS</span></div>
+      <div><b>${this.maxCombo}</b><span>MAX COMBO</span></div>
+      <div><b>${acc}%</b><span>ACCURACY</span></div>`;
+    if (grade === "S" || grade === "A" || isHi) SFX.clear();
+  },
+
+  // teardown for navigation / reload — no results screen
+  stopInternal() {
+    this.running = false;
+    this.paused = false;
+    if (this.rafId) cancelAnimationFrame(this.rafId);
+    this.rafId = null;
+    Metronome.stop();
+    if (GuitarVoice.ctx) GuitarVoice.panic();
+  },
+
+  stop() {
+    this.stopInternal();
+    PitchEngine.onFrame = null;
+  },
+};
+
+/* ---------------------------------------------------------------------- *
  * Screens
  * ---------------------------------------------------------------------- */
 
@@ -1150,6 +1519,7 @@ const Screens = {
     document.querySelectorAll(".screen").forEach((el) => el.classList.remove("active"));
     document.getElementById(`screen-${id}`).classList.add("active");
     if (id !== "play") { PlayMode.stop(); Demo.stop(); }
+    if (id !== "playalong") PlayAlong.stop();
     if (id !== "tuner") Tuner.stop();
     else Tuner.enter();
   },
@@ -1179,6 +1549,9 @@ function bumpCompletions(songId) {
 
 // null = "All artists". Persisted so the filter survives a reload, like the mic device pick.
 let activeArtistFilter = localStorage.getItem("sht_artist_filter") || null;
+
+// "practice" | "playalong" — which screen a song card opens. Persisted.
+let activeMode = localStorage.getItem("sht_mode") === "playalong" ? "playalong" : "practice";
 
 function songDuration(data) {
   const last = data.notes[data.notes.length - 1];
@@ -1261,8 +1634,13 @@ function renderSongList() {
   list.querySelectorAll(".song-card").forEach((card) => {
     card.addEventListener("click", () => {
       const song = SONGS.find((s) => s.id === card.dataset.song);
-      Screens.show("play");
-      PlayMode.load(song.id, song.data);
+      if (activeMode === "playalong") {
+        Screens.show("playalong");
+        PlayAlong.load(song.id, song.data);
+      } else {
+        Screens.show("play");
+        PlayMode.load(song.id, song.data);
+      }
     });
   });
 }
@@ -1849,5 +2227,31 @@ document.getElementById("nav-tuner-btn").addEventListener("click", () => Screens
 document.getElementById("tuner-back-btn").addEventListener("click", () => Screens.show("menu"));
 document.getElementById("tuner-mic-start-btn").addEventListener("click", () => Tuner.beginListening());
 document.getElementById("tuner-tuning-select").addEventListener("change", (e) => Tuner.setTuning(e.target.value));
+
+// Menu: Practice / Play-Along mode toggle
+document.querySelectorAll(".mode-btn").forEach((btn) => {
+  btn.classList.toggle("active", btn.dataset.mode === activeMode);
+  btn.addEventListener("click", () => {
+    activeMode = btn.dataset.mode;
+    localStorage.setItem("sht_mode", activeMode);
+    document.querySelectorAll(".mode-btn").forEach((b) => b.classList.toggle("active", b === btn));
+  });
+});
+
+// Play-Along wiring
+document.getElementById("pa-back-btn").addEventListener("click", () => { Screens.show("menu"); renderSongList(); });
+document.getElementById("pa-menu-btn").addEventListener("click", () => { Screens.show("menu"); renderSongList(); });
+document.getElementById("pa-restart-btn").addEventListener("click", () => PlayAlong.load(PlayAlong.songId, PlayAlong.song));
+document.getElementById("pa-again-btn").addEventListener("click", () => PlayAlong.load(PlayAlong.songId, PlayAlong.song));
+document.getElementById("pa-pause-btn").addEventListener("click", () => PlayAlong.togglePause());
+document.getElementById("pa-start-btn").addEventListener("click", () => PlayAlong.beginListening());
+document.getElementById("pa-speed").addEventListener("input", (e) => {
+  document.getElementById("pa-speed-val").textContent = `${e.target.value}%`;
+});
+document.getElementById("pa-guide-btn").addEventListener("click", (e) => {
+  PlayAlong.guide = !PlayAlong.guide;
+  e.currentTarget.classList.toggle("active", PlayAlong.guide);
+  e.currentTarget.textContent = PlayAlong.guide ? "🔊 Guide" : "🔇 Guide";
+});
 
 boot();
